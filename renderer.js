@@ -369,6 +369,7 @@ webview.addEventListener('did-navigate-in-page', (event) => {
 function showHome() {
     webWrap.classList.add("hidden");
     dashboard.classList.remove("hidden");
+    webview.src = "about:blank";
 }
 
 // Navigation Handlers
@@ -384,6 +385,20 @@ document.getElementById("reloadBtn").onclick = () => { webview.reload(); };
 
 // Home/Settings Button
 document.getElementById("homeBtn").onclick = showHome;
+const floatingHomeBtn = document.getElementById("floatingHomeBtn");
+if (floatingHomeBtn) floatingHomeBtn.onclick = showHome;
+
+// Keep the webview's height in sync with the bottom bar's real rendered
+// height so it never sits underneath (and swallows clicks meant for) the
+// nav bar's buttons, including Home.
+function syncBottomBarHeight() {
+    const bar = document.getElementById("bottomBrowserBar");
+    if (!bar) return;
+    document.documentElement.style.setProperty("--bottom-bar-height", `${bar.offsetHeight}px`);
+}
+window.addEventListener("resize", syncBottomBarHeight);
+window.addEventListener("DOMContentLoaded", syncBottomBarHeight);
+syncBottomBarHeight();
 
 // Extra Buttons (Placeholders)
 // Extra Buttons (Placeholders)
