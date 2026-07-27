@@ -1,4 +1,4 @@
-# AIVA Agentic Browser — Project Context for AI Coding Agents
+# Aiva-Agentic-browser — Project Context for AI Coding Agents
 
 This file is the onboarding brief for any AI coding assistant (Claude Code, Cursor,
 Copilot, Codex, etc.) working in this repo. Read it fully before making changes.
@@ -15,10 +15,9 @@ meditation/neck-exercise mini-apps). The active direction is to evolve it into a
 (navigate, read page content, eventually click/fill/complete multi-step tasks) instead
 of only answering wellness questions.
 
-Repo name: `Aiva-Agentic_Browser`. Internal branding/titles in the code still say
-"Wellness Browser" / `zen-browser` (package.json name) — this is a rebrand in
-progress, not a bug. Don't do a mass find-and-replace rename unless asked; update
-strings incrementally as you touch each file.
+Project name: `Aiva-Agentic-browser`. The current checkout folder is
+`Aiva-Agentic_Browser`; package metadata uses the npm-compatible lowercase form
+`aiva-agentic-browser`.
 
 ## Architecture
 
@@ -33,8 +32,8 @@ Electron (frontend)                    FastAPI (backend)
 │                     — no exposed      └── uvicorn on 127.0.0.1:5001
 │                     contextBridge
 │                     APIs yet)
-├── index.html         Dashboard + <webview> browser shell
-├── renderer.js         All frontend logic (~1100+ lines, single file, no bundler)
+├── index.html         Dashboard + vertical sidebar + initial <webview> host
+├── renderer.js         All frontend logic (~1500+ lines, single file, no bundler)
 ├── style.css           Everything is hand-written CSS, uses CSS custom properties
 └── {breathing,neck,meditation}.{html,js,css}   Standalone wellness mini-apps
 ```
@@ -44,10 +43,11 @@ There is no build step for the frontend — `index.html` loads `renderer.js` and
 framework. Keep changes consistent with that (don't introduce a build step without
 discussing it first).
 
-The Electron `<webview>` tag (`#webview` inside `#webWrap`) is the actual browsing
-surface. The dashboard (`#dashboard`) and the webview are mutually exclusive views
-toggled by adding/removing the `hidden` class — see `navigate()` and `showHome()`
-in `renderer.js`.
+The initial Electron `<webview>` (`#webview` inside `#webWrap`) becomes the first
+sidebar tab. `renderer.js` creates an additional `<webview>` for every new tab, so
+switching tabs preserves the guest page and its navigation history. The dashboard
+is shown when the active tab is `about:blank`; otherwise `#webWrap` displays only
+the active tab's webview.
 
 ## Ports & endpoints
 
@@ -69,11 +69,13 @@ Backend endpoints (`backend/server.py`):
 | GET | `/api/health/volume` | Reads Windows system volume via pycaw |
 | POST | `/api/exercise` | YOLOv8-pose squat counting frame-by-frame |
 | POST | `/api/history` | Logs browsing history (currently just returns `{"status": "logged"}` — not persisted) |
-| POST | `/api/chat` | AI Wellness Assistant chat, calls OpenAI `gpt-4o` with a fixed wellness-only system prompt |
+| POST | `/api/chat` | Aiva Agentic Assistant chat; supports current-page context and browser tool-call continuations |
 
-`/api/chat` is the natural extension point for agentic behavior — right now it's a
-plain Q&A endpoint with no tool use / function calling and no awareness of the
-current page or browser state.
+`/api/chat` accepts optional current-page context and a typed `tool_history`.
+OpenAI can request `navigate`, `read_page`, `get_current_url`, `go_back`,
+`go_forward`, or `reload_page`; `renderer.js` executes one ordered tool call at a
+time and returns its result for the next model turn. Runs are capped at eight model
+steps and expose a Stop control.
 
 Spotify: `requirements.txt` includes `spotipy` and `.env.example` has
 `SPOTIPY_CLIENT_ID`/`SECRET`, but there is no actual Spotify API integration wired up
@@ -116,35 +118,52 @@ Don't assume the Spotify credentials do anything yet.
 
 ## Recent fixes worth knowing about
 
-- **Home button overlap bug (fixed)**: `.webWrap`'s height was a hardcoded
-  `calc(100vh - 65px)`, but the real bottom nav bar (`#bottomBrowserBar`) could
-  render taller than that, letting the `<webview>` bleed under the bar and swallow
-  clicks meant for the Home button. Fixed by having `renderer.js` measure the bar's
-  real height (`syncBottomBarHeight()`) into a `--bottom-bar-height` CSS var that
-  `.webWrap` consumes, plus a redundant floating "⌂ Home" button
-  (`#floatingHomeBtn`) overlaid top-left of the webview as a backup escape hatch. If
-  you touch the bottom bar's layout (add buttons, change padding), this dynamic
-  sync means you generally don't need to hand-tune a pixel height anywhere.
+- **Vertical sidebar migration**: the old global bottom bookmark/navigation bar
+  and floating Home escape button were removed. Navigation, address input,
+  Essentials, pinned tabs, open tabs, workspaces, and utility controls now live in
+  `#browserSidebar`. `--sidebar-width` drives both the dashboard and webview offset;
+  the sidebar can be resized from 220–420px or fully hidden off-canvas. In auto-hide
+  mode the page uses the full window width, and `main.js` polls Electron's screen
+  cursor position and sends
+  `browser-cursor-position` to the renderer. This is necessary because guest
+  `<webview>` surfaces swallow DOM pointer-leave events and can leave CSS `:hover`
+  stuck. Moving the cursor to the extreme left edge reveals the sidebar as an
+  overlay, so the page does not jump sideways.
+- **Real tab host**: each sidebar tab owns a separate Electron `<webview>`.
+  Tab/workspace/pin metadata persists in `localStorage`; the live guest contents
+  and per-tab navigation history persist while the window remains open.
+- **Face Scanner is opt-in**: never call `getUserMedia()` at startup. The user must
+  press `#toggleFaceScannerBtn`; stopping clears its interval, aborts in-flight face
+  analysis, stops every media track, resets warnings, and removes `srcObject`.
 
-## Agentic browser roadmap (in progress, not yet built)
+## Agentic browser roadmap (in progress)
 
 Discussed direction, smallest-first:
-1. **Navigate + read** — AI can open URLs and read/summarize the current webview
-   page's text via chat. (Not yet started.)
-2. **Navigate + read + act** — AI can click elements / fill forms driven by DOM
+1. **Navigate + read (implemented)** — Chat requests made while the webview is
+   active include its visible text as optional `page_context` (plus `page_url`) for
+   `/api/chat` to inject into the model's system messages.
+2. **Real browser tools (implemented)** — The regex navigation shortcut has been
+   replaced by OpenAI function-calling. `renderer.js` executes navigation,
+   back/forward, reload, URL inspection, and page-reading tools, reports progress,
+   returns results to the model, enforces an eight-step limit, and supports user
+   cancellation. Tool calls are sequential (`parallel_tool_calls=False`) so their
+   history stays ordered.
+3. **Page interaction** — AI can click elements / fill forms driven by DOM
    inspection it reads back from the page (needs a way to extract interactive
    elements + selectors from the webview, likely via `webContents.executeJavaScript`
    through the `<webview>`'s guest page).
-3. **Full autonomous multi-step agent** — plan/observe/act loop across multiple
-   pages/steps with tool-use/function-calling, step limits, and a stop mechanism.
+4. **Full autonomous multi-step agent** — richer planning, recovery, permissions,
+   audit logs, and reusable workflows across multiple pages.
 
-`/api/chat` and `renderer.js`'s chat handling (`sendMessage()`, around line ~914) are
-the two places this will need to grow from. `preload.js` is currently empty — any
-webview-content-reading capability will likely need a `contextBridge` API exposed
-there, or `webview.executeJavaScript()` called from `renderer.js` directly (simpler,
-no context isolation currently since `nodeIntegration: true, contextIsolation: false`
-in `main.js`'s `BrowserWindow` config — that's a real security looseness worth
-revisiting once the webview starts executing AI-driven actions on arbitrary sites).
+`/api/chat` and `renderer.js`'s chat handling (`sendMessage()`, around line ~1080) are
+the two places this will need to grow from. Milestone 1 reads the guest page through
+`webview.executeJavaScript()` directly. `preload.js` is currently empty, and there is
+no context isolation (`nodeIntegration: true, contextIsolation: false` in `main.js`'s
+`BrowserWindow` config) — that's a real security looseness worth revisiting once the
+webview starts executing AI-driven actions on arbitrary sites.
+
+The renderer now has tab lifecycle and active-tab state, but `/api/chat` does not
+yet expose `open_tab`, `list_tabs`, `switch_tab`, or `close_tab` tools to the model.
 
 ## Conventions
 

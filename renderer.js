@@ -1,9 +1,13 @@
 const dashboard = document.getElementById("dashboard");
 const webWrap = document.getElementById("webWrap");
 const searchInput = document.getElementById("searchInput");
-const webview = document.getElementById("webview");
+let webview = document.getElementById("webview");
 const urlBar = document.getElementById("urlBar");
 const quickAppsContainer = document.querySelector(".quickApps");
+const browserSidebar = document.getElementById("browserSidebar");
+const sidebarPinnedList = document.getElementById("sidebarPinnedList");
+const sidebarTabsList = document.getElementById("sidebarTabsList");
+const activeWorkspaceName = document.getElementById("activeWorkspaceName");
 
 // Buttons & Widgets
 const weatherDataEl = document.getElementById("weatherData");
@@ -12,6 +16,8 @@ const newsDataEl = document.getElementById("newsData");
 const videoEl = document.getElementById("selfieVideo");
 const authStatus = document.getElementById("authStatus");
 const faceScanStatus = document.querySelector(".faceScanStatus"); // Add selector
+const faceScannerIdle = document.getElementById("faceScannerIdle");
+const toggleFaceScannerBtn = document.getElementById("toggleFaceScannerBtn");
 // const exerciseCountEl = document.getElementById("exerciseCount");
 // const exerciseStatusEl = document.getElementById("exerciseStatus");
 // const detectionBox = document.querySelector(".detectionBox");
@@ -262,14 +268,54 @@ function logStatus(msg) {
 }
 
 // ------------------- Navigation -------------------
+async function getPageContent() {
+    try {
+        return await webview.executeJavaScript("document.body.innerText");
+    } catch (error) {
+        console.warn("Unable to read current page:", error);
+        return null;
+    }
+}
+
+function waitForWebviewLoad(timeoutMs = 15000) {
+    const targetWebview = webview;
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            targetWebview.removeEventListener("did-stop-loading", onStop);
+            targetWebview.removeEventListener("did-fail-load", onFail);
+            resolve(result);
+        };
+        const onStop = () => finish({ success: true, url: targetWebview.getURL() });
+        const onFail = (event) => {
+            if (event.isMainFrame === false) return;
+            finish({
+                success: false,
+                url: event.validatedURL || targetWebview.getURL(),
+                error: event.errorDescription || "Page failed to load"
+            });
+        };
+        const timeout = setTimeout(() => {
+            finish({ success: false, url: targetWebview.getURL(), error: "Page load timed out" });
+        }, timeoutMs);
+
+        targetWebview.addEventListener("did-stop-loading", onStop);
+        targetWebview.addEventListener("did-fail-load", onFail);
+    });
+}
+
 async function navigate(query) {
-    if (!query) return;
+    if (!query) return { success: false, error: "No navigation target was provided." };
+    ensureActiveSidebarTab();
 
     // PRE-CHECK QUERY FOR FOCUS MODE
     if (isFocusModeActive && isUrlDistraction(query)) {
         alert("Focus Mode is ON. Distraction-related sites are blocked! 🛡️");
         logStatus("Focus Mode Blocked: " + query);
-        return;
+        return { success: false, error: "Navigation was blocked by Focus Mode." };
     }
 
     logStatus("Navigating to: " + query);
@@ -299,7 +345,7 @@ async function navigate(query) {
         // RE-CHECK RESOLVED URL FOR FOCUS MODE
         if (isFocusModeActive && isUrlDistraction(url)) {
             alert("Focus Mode is ON. This specific site is restricted! 🛡️");
-            return;
+            return { success: false, error: "The resolved URL was blocked by Focus Mode.", url };
         }
 
         dashboard.classList.add("hidden");
@@ -308,68 +354,444 @@ async function navigate(query) {
         logStatus("Loading in Webview: " + url);
         webview.src = url;
         urlBar.value = url;
+        updateActiveTabMetadata({ url });
+        return await waitForWebviewLoad();
 
     } catch (err) {
         logStatus("Error in navigate: " + err);
+        return { success: false, error: String(err) };
     }
 }
 
-// Webview Events
-webview.addEventListener('will-navigate', (event) => {
-    if (isFocusModeActive && isUrlDistraction(event.url)) {
-        // Stop navigation immediately logic happens before loading starts
-        // We can't strictly preventDefault on will-navigate in all electrons, 
-        // but we can immediately redirect or stop.
-        // For Electron webview tag, this event is often not cancellable directly via event.preventDefault() 
-        // in rendering process comfortably depending on version, but we can do a check.
+const SIDEBAR_TABS_STORAGE_KEY = "aivaSidebarTabs";
+const SIDEBAR_ACTIVE_TAB_KEY = "aivaSidebarActiveTab";
+const SIDEBAR_WORKSPACE_KEY = "aivaSidebarWorkspace";
+const SIDEBAR_COLLAPSED_KEY = "aivaSidebarCollapsed";
+const SIDEBAR_WIDTH_KEY = "aivaSidebarWidth";
+const SIDEBAR_WORKSPACES = {
+    personal: "Personal",
+    work: "Work",
+    research: "Research"
+};
 
-        // Better approach: Check URL and if blocked, load a blocked page or stop.
-        webview.stop();
-        alert("Blocked by Focus Mode! 🛡️\n\nStay focused on your goals.");
-        // dashboard could be shown or just stay on previous page
+let sidebarTabs = [];
+let activeSidebarTabId = null;
+let activeSidebarWorkspace = localStorage.getItem(SIDEBAR_WORKSPACE_KEY) || "personal";
+
+function createTabId() {
+    return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getSidebarTab(tabId) {
+    return sidebarTabs.find((tab) => tab.id === tabId) || null;
+}
+
+function getDisplayTitle(url) {
+    if (!url || url === "about:blank") return "New Tab";
+    try {
+        return new URL(url).hostname.replace(/^www\./, "") || url;
+    } catch {
+        return url;
     }
-});
+}
 
-webview.addEventListener('did-start-loading', () => {
-    // Double check current URL just in case
-    const currentUrl = webview.getURL();
-    if (isFocusModeActive && isUrlDistraction(currentUrl)) {
-        webview.stop();
-        webview.goBack(); // Try to go back
-        alert("Blocked by Focus Mode! 🛡️");
+function getFallbackFavicon(url) {
+    try {
+        const domain = new URL(url).hostname;
+        return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
+    } catch {
+        return "assets/home_icon.png";
     }
-    logStatus("Loading...");
-});
+}
 
-webview.addEventListener('did-stop-loading', () => {
-    logStatus("Ready");
-    const url = webview.getURL();
-    // Don't show about:blank in the URL bar
-    if (url === 'about:blank') {
+function createTabWebview(tabId) {
+    const view = document.createElement("webview");
+    view.className = "webview hidden";
+    view.dataset.tabId = tabId;
+    view.setAttribute("allowpopups", "");
+    webWrap.appendChild(view);
+    return view;
+}
+
+function registerSidebarTab(metadata, existingView = null) {
+    const tab = {
+        id: metadata.id || createTabId(),
+        url: metadata.url || "about:blank",
+        title: metadata.title || getDisplayTitle(metadata.url),
+        favicon: metadata.favicon || "",
+        pinned: Boolean(metadata.pinned),
+        workspace: SIDEBAR_WORKSPACES[metadata.workspace] ? metadata.workspace : activeSidebarWorkspace,
+        view: existingView || null
+    };
+
+    tab.view = existingView || createTabWebview(tab.id);
+    tab.view.dataset.tabId = tab.id;
+    attachWebviewEvents(tab.view, tab.id);
+    sidebarTabs.push(tab);
+    if (tab.url !== "about:blank") tab.view.src = tab.url;
+    return tab;
+}
+
+function createSidebarTab(url = "about:blank", options = {}) {
+    const tab = registerSidebarTab({
+        id: createTabId(),
+        url,
+        title: options.title || getDisplayTitle(url),
+        pinned: Boolean(options.pinned),
+        workspace: options.workspace || activeSidebarWorkspace
+    });
+    persistSidebarState();
+    if (options.activate !== false) selectSidebarTab(tab.id);
+    else renderSidebarTabs();
+    return tab;
+}
+
+function ensureActiveSidebarTab() {
+    let tab = getSidebarTab(activeSidebarTabId);
+    if (!tab) tab = createSidebarTab("about:blank", { activate: true });
+    webview = tab.view;
+    return tab;
+}
+
+function selectSidebarTab(tabId) {
+    const tab = getSidebarTab(tabId);
+    if (!tab) return;
+
+    activeSidebarTabId = tab.id;
+    activeSidebarWorkspace = tab.workspace;
+    webview = tab.view;
+
+    sidebarTabs.forEach((candidate) => {
+        candidate.view.classList.toggle("hidden", candidate.id !== tab.id);
+    });
+
+    if (tab.url === "about:blank") {
+        webWrap.classList.add("hidden");
+        dashboard.classList.remove("hidden");
         urlBar.value = "";
     } else {
-        urlBar.value = url;
+        dashboard.classList.add("hidden");
+        webWrap.classList.remove("hidden");
+        urlBar.value = tab.url;
     }
-});
-webview.addEventListener('did-navigate', (event) => {
-    if (event.url === 'about:blank') {
-        urlBar.value = "";
+
+    persistSidebarState();
+    renderSidebarTabs();
+}
+
+function closeSidebarTab(tabId) {
+    const index = sidebarTabs.findIndex((tab) => tab.id === tabId);
+    if (index === -1) return;
+
+    const [closedTab] = sidebarTabs.splice(index, 1);
+    closedTab.view.remove();
+
+    if (activeSidebarTabId === tabId) {
+        const workspaceTabs = sidebarTabs.filter((tab) => tab.workspace === activeSidebarWorkspace);
+        const replacement = workspaceTabs[Math.min(index, workspaceTabs.length - 1)] || workspaceTabs[0];
+        if (replacement) {
+            selectSidebarTab(replacement.id);
+        } else {
+            createSidebarTab("about:blank", { workspace: activeSidebarWorkspace, activate: true });
+        }
     } else {
-        urlBar.value = event.url;
+        persistSidebarState();
+        renderSidebarTabs();
     }
-});
-webview.addEventListener('did-navigate-in-page', (event) => {
-    if (event.url === 'about:blank') {
-        urlBar.value = "";
+}
+
+function updateActiveTabMetadata(updates) {
+    const tab = getSidebarTab(activeSidebarTabId);
+    if (!tab) return;
+    Object.assign(tab, updates);
+    if (updates.url && (!updates.title || tab.title === "New Tab")) {
+        tab.title = getDisplayTitle(updates.url);
+    }
+    persistSidebarState();
+    renderSidebarTabs();
+}
+
+function togglePinForActiveTab() {
+    const tab = getSidebarTab(activeSidebarTabId);
+    if (!tab || tab.url === "about:blank") return;
+    tab.pinned = !tab.pinned;
+    persistSidebarState();
+    renderSidebarTabs();
+}
+
+function switchSidebarWorkspace(workspace) {
+    if (!SIDEBAR_WORKSPACES[workspace]) return;
+    activeSidebarWorkspace = workspace;
+    localStorage.setItem(SIDEBAR_WORKSPACE_KEY, workspace);
+    const workspaceTabs = sidebarTabs.filter((tab) => tab.workspace === workspace);
+    const target = workspaceTabs.find((tab) => tab.id === activeSidebarTabId)
+        || workspaceTabs.find((tab) => tab.pinned)
+        || workspaceTabs[0];
+    if (target) selectSidebarTab(target.id);
+    else createSidebarTab("about:blank", { workspace, activate: true });
+}
+
+function createSidebarTabItem(tab) {
+    const item = document.createElement("div");
+    item.className = `sidebarTabItem${tab.id === activeSidebarTabId ? " active" : ""}`;
+    item.title = tab.title;
+    item.onclick = () => selectSidebarTab(tab.id);
+    item.oncontextmenu = (event) => {
+        event.preventDefault();
+        tab.pinned = !tab.pinned;
+        persistSidebarState();
+        renderSidebarTabs();
+    };
+
+    const favicon = document.createElement("img");
+    favicon.className = "sidebarTabFavicon";
+    favicon.src = tab.favicon || getFallbackFavicon(tab.url);
+    favicon.alt = "";
+    favicon.onerror = () => {
+        favicon.onerror = null;
+        favicon.src = "assets/home_icon.png";
+    };
+
+    const label = document.createElement("span");
+    label.className = "sidebarTabLabel";
+    label.textContent = tab.title || getDisplayTitle(tab.url);
+
+    const closeButton = document.createElement("button");
+    closeButton.className = "sidebarTabClose";
+    closeButton.type = "button";
+    closeButton.title = "Close tab";
+    closeButton.textContent = "×";
+    closeButton.onclick = (event) => {
+        event.stopPropagation();
+        closeSidebarTab(tab.id);
+    };
+
+    item.append(favicon, label, closeButton);
+    return item;
+}
+
+function renderSidebarTabList(container, tabs, emptyLabel) {
+    container.replaceChildren();
+    if (!tabs.length) {
+        const empty = document.createElement("div");
+        empty.className = "sidebarEmptyState";
+        empty.textContent = emptyLabel;
+        container.appendChild(empty);
+        return;
+    }
+    tabs.forEach((tab) => container.appendChild(createSidebarTabItem(tab)));
+}
+
+function renderSidebarTabs() {
+    const workspaceTabs = sidebarTabs.filter((tab) => tab.workspace === activeSidebarWorkspace);
+    renderSidebarTabList(sidebarPinnedList, workspaceTabs.filter((tab) => tab.pinned), "Pin a tab to keep it here");
+    renderSidebarTabList(sidebarTabsList, workspaceTabs.filter((tab) => !tab.pinned), "No open tabs");
+
+    activeWorkspaceName.textContent = SIDEBAR_WORKSPACES[activeSidebarWorkspace];
+    document.querySelectorAll(".workspaceButton").forEach((button) => {
+        button.classList.toggle("active", button.dataset.workspace === activeSidebarWorkspace);
+    });
+    const activeTab = getSidebarTab(activeSidebarTabId);
+    document.getElementById("pinCurrentTabBtn").textContent = activeTab?.pinned ? "−" : "＋";
+}
+
+function persistSidebarState() {
+    const serializableTabs = sidebarTabs.map(({ view, ...tab }) => tab);
+    localStorage.setItem(SIDEBAR_TABS_STORAGE_KEY, JSON.stringify(serializableTabs));
+    if (activeSidebarTabId) localStorage.setItem(SIDEBAR_ACTIVE_TAB_KEY, activeSidebarTabId);
+    localStorage.setItem(SIDEBAR_WORKSPACE_KEY, activeSidebarWorkspace);
+}
+
+function initializeSidebar() {
+    const storedCollapsed = true;
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, "true");
+    document.body.classList.toggle("sidebarCollapsed", storedCollapsed);
+    const collapseSidebarBtn = document.getElementById("collapseSidebarBtn");
+    const updateSidebarModeButton = (collapsed) => {
+        collapseSidebarBtn.textContent = collapsed ? "»" : "«";
+        collapseSidebarBtn.title = collapsed ? "Pin sidebar open" : "Use auto-hide sidebar";
+        collapseSidebarBtn.setAttribute("aria-label", collapseSidebarBtn.title);
+    };
+    updateSidebarModeButton(storedCollapsed);
+
+    const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    if (storedWidth >= 220 && storedWidth <= 420) {
+        document.documentElement.style.setProperty("--sidebar-width", `${storedWidth}px`);
+        document.documentElement.style.setProperty("--sidebar-expanded-width", `${storedWidth}px`);
+    }
+
+    let storedTabs = [];
+    try {
+        storedTabs = JSON.parse(localStorage.getItem(SIDEBAR_TABS_STORAGE_KEY) || "[]");
+        if (!Array.isArray(storedTabs)) storedTabs = [];
+    } catch {
+        storedTabs = [];
+    }
+
+    if (storedTabs.length) {
+        storedTabs.forEach((metadata, index) => {
+            registerSidebarTab(metadata, index === 0 ? webview : null);
+        });
+        const storedActiveId = localStorage.getItem(SIDEBAR_ACTIVE_TAB_KEY);
+        const target = getSidebarTab(storedActiveId)
+            || sidebarTabs.find((tab) => tab.workspace === activeSidebarWorkspace)
+            || sidebarTabs[0];
+        selectSidebarTab(target.id);
     } else {
-        urlBar.value = event.url;
+        const firstTab = registerSidebarTab({
+            id: createTabId(),
+            url: "about:blank",
+            title: "New Tab",
+            workspace: activeSidebarWorkspace
+        }, webview);
+        selectSidebarTab(firstTab.id);
     }
-});
+
+    document.querySelectorAll(".favoriteTile").forEach((tile) => {
+        tile.onclick = () => {
+            const activeTab = getSidebarTab(activeSidebarTabId);
+            if (activeTab?.url === "about:blank") navigate(tile.dataset.url);
+            else createSidebarTab(tile.dataset.url, { activate: true });
+        };
+    });
+    document.querySelectorAll(".workspaceButton").forEach((button) => {
+        button.onclick = () => switchSidebarWorkspace(button.dataset.workspace);
+    });
+    document.getElementById("newTabBtn").onclick = () => {
+        createSidebarTab("about:blank", { activate: true });
+        urlBar.focus();
+    };
+    document.getElementById("pinCurrentTabBtn").onclick = togglePinForActiveTab;
+    collapseSidebarBtn.onclick = () => {
+        const collapsed = document.body.classList.toggle("sidebarCollapsed");
+        if (!collapsed) document.body.classList.remove("sidebarHoverExpanded");
+        updateSidebarModeButton(collapsed);
+    };
+
+    ipcRenderer.on("browser-cursor-position", (_event, position) => {
+        if (!document.body.classList.contains("sidebarCollapsed")) {
+            document.body.classList.remove("sidebarHoverExpanded");
+            return;
+        }
+        const expandedWidth = Number.parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue("--sidebar-expanded-width")
+        ) || 276;
+        const isExpanded = document.body.classList.contains("sidebarHoverExpanded");
+        const activationBoundary = isExpanded ? expandedWidth + 12 : 16;
+        const insideWindow = position.y >= 0 && position.y <= position.height;
+        document.body.classList.toggle(
+            "sidebarHoverExpanded",
+            insideWindow && position.x >= 0 && position.x <= activationBoundary
+        );
+    });
+    browserSidebar.addEventListener("focusin", () => {
+        if (document.body.classList.contains("sidebarCollapsed")) {
+            document.body.classList.add("sidebarHoverExpanded");
+        }
+    });
+
+    const resizeHandle = document.getElementById("sidebarResizeHandle");
+    resizeHandle.onpointerdown = (event) => {
+        if (document.body.classList.contains("sidebarCollapsed")) return;
+        resizeHandle.setPointerCapture(event.pointerId);
+    };
+    resizeHandle.onpointermove = (event) => {
+        if (!resizeHandle.hasPointerCapture(event.pointerId)) return;
+        const width = Math.min(420, Math.max(220, event.clientX));
+        document.documentElement.style.setProperty("--sidebar-width", `${width}px`);
+        document.documentElement.style.setProperty("--sidebar-expanded-width", `${width}px`);
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+    };
+    resizeHandle.onpointerup = (event) => {
+        if (resizeHandle.hasPointerCapture(event.pointerId)) {
+            resizeHandle.releasePointerCapture(event.pointerId);
+        }
+    };
+
+    document.addEventListener("keydown", (event) => {
+        if (event.ctrlKey && event.key.toLowerCase() === "t") {
+            event.preventDefault();
+            createSidebarTab("about:blank", { activate: true });
+            urlBar.focus();
+        }
+        if (event.ctrlKey && event.key.toLowerCase() === "w") {
+            event.preventDefault();
+            closeSidebarTab(activeSidebarTabId);
+        }
+    });
+
+    renderSidebarTabs();
+}
+
+function attachWebviewEvents(view, tabId) {
+    view.addEventListener("will-navigate", (event) => {
+        if (isFocusModeActive && isUrlDistraction(event.url)) {
+            view.stop();
+            alert("Blocked by Focus Mode! 🛡️\n\nStay focused on your goals.");
+        }
+    });
+
+    view.addEventListener("did-start-loading", () => {
+        const currentUrl = view.getURL();
+        if (isFocusModeActive && isUrlDistraction(currentUrl)) {
+            view.stop();
+            if (view.canGoBack()) view.goBack();
+            alert("Blocked by Focus Mode! 🛡️");
+        }
+        if (tabId === activeSidebarTabId) logStatus("Loading...");
+    });
+
+    view.addEventListener("did-stop-loading", () => {
+        const tab = getSidebarTab(tabId);
+        if (!tab) return;
+        const url = view.getURL() || tab.url;
+        tab.url = url;
+        tab.title = url === "about:blank" ? "New Tab" : (view.getTitle() || getDisplayTitle(url));
+        if (tabId === activeSidebarTabId) {
+            logStatus("Ready");
+            urlBar.value = url === "about:blank" ? "" : url;
+        }
+        persistSidebarState();
+        renderSidebarTabs();
+    });
+
+    const updateNavigatedUrl = (event) => {
+        const tab = getSidebarTab(tabId);
+        if (!tab) return;
+        tab.url = event.url;
+        if (tabId === activeSidebarTabId) {
+            urlBar.value = event.url === "about:blank" ? "" : event.url;
+        }
+        persistSidebarState();
+        renderSidebarTabs();
+    };
+
+    view.addEventListener("did-navigate", updateNavigatedUrl);
+    view.addEventListener("did-navigate-in-page", updateNavigatedUrl);
+    view.addEventListener("page-title-updated", (event) => {
+        const tab = getSidebarTab(tabId);
+        if (!tab || !event.title || tab.url === "about:blank") return;
+        tab.title = event.title;
+        persistSidebarState();
+        renderSidebarTabs();
+    });
+    view.addEventListener("page-favicon-updated", (event) => {
+        const tab = getSidebarTab(tabId);
+        if (!tab || !event.favicons?.length) return;
+        tab.favicon = event.favicons[0];
+        persistSidebarState();
+        renderSidebarTabs();
+    });
+}
 
 function showHome() {
-    webWrap.classList.add("hidden");
-    dashboard.classList.remove("hidden");
-    webview.src = "about:blank";
+    const activeTab = getSidebarTab(activeSidebarTabId);
+    if (!activeTab || activeTab.url !== "about:blank") {
+        createSidebarTab("about:blank", { activate: true });
+        return;
+    }
+    selectSidebarTab(activeTab.id);
+    urlBar.focus();
 }
 
 // Navigation Handlers
@@ -385,20 +807,6 @@ document.getElementById("reloadBtn").onclick = () => { webview.reload(); };
 
 // Home/Settings Button
 document.getElementById("homeBtn").onclick = showHome;
-const floatingHomeBtn = document.getElementById("floatingHomeBtn");
-if (floatingHomeBtn) floatingHomeBtn.onclick = showHome;
-
-// Keep the webview's height in sync with the bottom bar's real rendered
-// height so it never sits underneath (and swallows clicks meant for) the
-// nav bar's buttons, including Home.
-function syncBottomBarHeight() {
-    const bar = document.getElementById("bottomBrowserBar");
-    if (!bar) return;
-    document.documentElement.style.setProperty("--bottom-bar-height", `${bar.offsetHeight}px`);
-}
-window.addEventListener("resize", syncBottomBarHeight);
-window.addEventListener("DOMContentLoaded", syncBottomBarHeight);
-syncBottomBarHeight();
 
 // Extra Buttons (Placeholders)
 // Extra Buttons (Placeholders)
@@ -770,19 +1178,83 @@ fetchData();
 // No interval for Apps/News to save bandwidth, only on load or reload
 
 // ------------------- Camera & CV -------------------
-async function startCamera() {
+let faceScannerStream = null;
+let faceScannerInterval = null;
+let faceScannerActive = false;
+let faceFrameInFlight = false;
+let faceAnalysisController = null;
+
+async function startFaceScanner() {
+    if (faceScannerActive || faceScannerStream) return;
+    toggleFaceScannerBtn.disabled = true;
+    toggleFaceScannerBtn.textContent = "Starting…";
+    authStatus.innerHTML = '<span class="statusDot"></span> Requesting camera…';
+
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        videoEl.srcObject = stream;
-        setInterval(processFrame, 1000);
+        faceScannerStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 } },
+            audio: false
+        });
+        videoEl.srcObject = faceScannerStream;
+        await videoEl.play();
+        faceScannerActive = true;
+        videoEl.classList.remove("hidden");
+        faceScannerIdle.classList.add("hidden");
+        toggleFaceScannerBtn.textContent = "Stop Face Scanner";
+        toggleFaceScannerBtn.classList.add("active");
+        authStatus.innerHTML = '<span class="statusDot on"></span> Scanner active';
+        faceScanStatus.innerHTML = '<span class="eyeIcon">👁</span> Analyzing facial expressions';
+        faceScanStatus.style.color = "";
+        faceScannerInterval = setInterval(processFrame, 1000);
+        processFrame();
     } catch (err) {
         console.error("Error accessing camera", err);
-        authStatus.innerText = "Camera Error";
+        if (faceScannerStream) {
+            faceScannerStream.getTracks().forEach((track) => track.stop());
+        }
+        faceScannerStream = null;
+        videoEl.srcObject = null;
+        authStatus.innerHTML = '<span class="statusDot error"></span> Camera unavailable';
+        faceScanStatus.innerHTML = '<span class="eyeIcon">👁</span> Allow camera access to use face analysis';
+        toggleFaceScannerBtn.textContent = "Try Again";
+    } finally {
+        toggleFaceScannerBtn.disabled = false;
     }
 }
 
+function stopFaceScanner() {
+    faceScannerActive = false;
+    faceFrameInFlight = false;
+    if (faceScannerInterval) {
+        clearInterval(faceScannerInterval);
+        faceScannerInterval = null;
+    }
+    if (faceAnalysisController) {
+        faceAnalysisController.abort();
+        faceAnalysisController = null;
+    }
+    if (faceScannerStream) {
+        faceScannerStream.getTracks().forEach((track) => track.stop());
+        faceScannerStream = null;
+    }
+    videoEl.pause();
+    videoEl.srcObject = null;
+    videoEl.classList.add("hidden");
+    faceScannerIdle.classList.remove("hidden");
+    toggleFaceScannerBtn.textContent = "Start Face Scanner";
+    toggleFaceScannerBtn.classList.remove("active");
+    authStatus.innerHTML = '<span class="statusDot"></span> Scanner off';
+    faceScanStatus.innerHTML = '<span class="eyeIcon">👁</span> Face analysis is paused';
+    faceScanStatus.style.color = "";
+    phoneUsageSeconds = 0;
+    absenceSeconds = 0;
+    if (phoneWarning) phoneWarning.classList.add("hidden");
+    if (absenceWarning) absenceWarning.classList.add("hidden");
+}
+
 async function processFrame() {
-    if (!videoEl.srcObject) return;
+    if (!faceScannerActive || faceFrameInFlight || !videoEl.srcObject || !videoEl.videoWidth) return;
+    faceFrameInFlight = true;
 
     const canvas = document.createElement("canvas");
     canvas.width = videoEl.videoWidth;
@@ -791,13 +1263,17 @@ async function processFrame() {
     ctx.drawImage(videoEl, 0, 0);
     const dataUrl = canvas.toDataURL("image/jpeg");
 
+    const analysisController = new AbortController();
+    faceAnalysisController = analysisController;
     try {
         const res = await fetch(`${BACKEND_URL}/analyze_face`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image: dataUrl })
+            body: JSON.stringify({ image: dataUrl }),
+            signal: analysisController.signal
         });
         const data = await res.json();
+        if (!faceScannerActive) return;
 
         if (data.detected) {
             // Update UI with specific state
@@ -863,23 +1339,19 @@ async function processFrame() {
             }
         }
     } catch (e) {
-        // console.log("CV Error:", e);
+        if (e.name !== "AbortError") console.warn("Face analysis failed:", e);
+    } finally {
+        if (faceAnalysisController === analysisController) faceAnalysisController = null;
+        faceFrameInFlight = false;
     }
 }
 
-// ------------------- Camera & CV -------------------
-async function startCamera() {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        videoEl.srcObject = stream;
-        setInterval(processFrame, 1000);
-    } catch (err) {
-        console.error("Error accessing camera", err);
-        authStatus.innerText = "Camera Error";
-    }
-}
+toggleFaceScannerBtn.onclick = () => {
+    if (faceScannerActive) stopFaceScanner();
+    else startFaceScanner();
+};
 
-startCamera();
+window.addEventListener("beforeunload", stopFaceScanner);
 
 // ------------------- AI CHATBOT FUNCTIONALITY -------------------
 const aiChatPanel = document.getElementById("aiChatPanel");
@@ -888,6 +1360,11 @@ const closeChatBtn = document.getElementById("closeChatBtn");
 const chatInput = document.getElementById("chatInput");
 const sendChatBtn = document.getElementById("sendChatBtn");
 const chatMessages = document.getElementById("chatMessages");
+const stopAgentBtn = document.getElementById("stopAgentBtn");
+const agentStatus = document.getElementById("agentStatus");
+const MAX_AGENT_STEPS = 8;
+let activeChatController = null;
+let agentRunCancelled = false;
 
 // Toggle chat panel
 function toggleChatPanel() {
@@ -906,82 +1383,224 @@ closeChatBtn.onclick = () => {
 };
 
 // Add message to chat
-function addMessage(text, isUser = false) {
+function addMessage(text, isUser = false, usingPage = false) {
     const messageDiv = document.createElement("div");
     messageDiv.className = isUser ? "userMessage" : "aiMessage";
 
     const avatar = isUser ? "👤" : "🤖";
     const avatarClass = isUser ? "userAvatar" : "aiAvatar";
 
-    messageDiv.innerHTML = `
-        <div class="messageContent">
-            <span class="${avatarClass}">${avatar}</span>
-            <div class="messageText">${text}</div>
-        </div>
-    `;
+    const content = document.createElement("div");
+    content.className = "messageContent";
+
+    const avatarSpan = document.createElement("span");
+    avatarSpan.className = avatarClass;
+    avatarSpan.textContent = avatar;
+
+    const messageBody = document.createElement("div");
+    messageBody.className = "messageBody";
+
+    const messageText = document.createElement("div");
+    messageText.className = "messageText";
+    messageText.textContent = text;
+
+    messageBody.appendChild(messageText);
+    if (usingPage) {
+        const contextTag = document.createElement("div");
+        contextTag.className = "pageContextTag";
+        contextTag.textContent = "📄 using current page";
+        messageBody.appendChild(contextTag);
+    }
+
+    content.append(avatarSpan, messageBody);
+    messageDiv.appendChild(content);
 
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+function addAgentAction(text) {
+    const actionDiv = document.createElement("div");
+    actionDiv.className = "agentActionMessage";
+    actionDiv.textContent = `⚙ ${text}`;
+    chatMessages.appendChild(actionDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function setAgentStatus(text = "") {
+    agentStatus.textContent = text;
+    agentStatus.classList.toggle("hidden", !text);
+}
+
+function setAgentRunning(running) {
+    chatInput.disabled = running;
+    sendChatBtn.disabled = running;
+    stopAgentBtn.classList.toggle("hidden", !running);
+    if (!running) chatInput.focus();
+}
+
+function describeToolCall(toolCall) {
+    const labels = {
+        read_page: "Reading the current page",
+        get_current_url: "Checking the current URL",
+        go_back: "Going back",
+        go_forward: "Going forward",
+        reload_page: "Reloading the current page"
+    };
+    if (toolCall.name === "navigate") {
+        return `Opening ${toolCall.arguments?.target || "the requested page"}`;
+    }
+    return labels[toolCall.name] || `Running ${toolCall.name}`;
+}
+
+async function attachCurrentPageContext(requestBody) {
+    delete requestBody.page_context;
+    delete requestBody.page_url;
+
+    if (webWrap.classList.contains("hidden")) return false;
+
+    const pageContext = await getPageContent();
+    if (!pageContext) return false;
+
+    requestBody.page_context = pageContext;
+    requestBody.page_url = webview.getURL();
+    return true;
+}
+
+async function executeBrowserTool(name, args = {}) {
+    switch (name) {
+        case "navigate":
+            return await navigate(args.target);
+        case "read_page": {
+            const content = await getPageContent();
+            if (content === null) {
+                return { success: false, error: "The current page could not be read." };
+            }
+            return {
+                success: true,
+                url: webview.getURL(),
+                content: content.slice(0, 8000),
+                truncated: content.length > 8000
+            };
+        }
+        case "get_current_url":
+            return { success: true, url: webview.getURL() || "about:blank" };
+        case "go_back": {
+            if (!webview.canGoBack()) {
+                return { success: false, error: "There is no previous page in browser history." };
+            }
+            const loadResult = waitForWebviewLoad();
+            webview.goBack();
+            return await loadResult;
+        }
+        case "go_forward": {
+            if (!webview.canGoForward()) {
+                return { success: false, error: "There is no next page in browser history." };
+            }
+            const loadResult = waitForWebviewLoad();
+            webview.goForward();
+            return await loadResult;
+        }
+        case "reload_page": {
+            const loadResult = waitForWebviewLoad();
+            webview.reload();
+            return await loadResult;
+        }
+        default:
+            return { success: false, error: `Unsupported browser tool: ${name}` };
+    }
+}
+
 // Send message
 async function sendMessage() {
+    if (activeChatController) return;
+
     const message = chatInput.value.trim();
     if (!message) return;
 
-    // Add user message
     addMessage(message, true);
     chatInput.value = "";
 
-    // Show typing indicator
-    const typingDiv = document.createElement("div");
-    typingDiv.className = "aiMessage typing-indicator";
-    typingDiv.id = "typingIndicator";
-    typingDiv.innerHTML = `
-        <div class="messageContent">
-            <span class="aiAvatar">🤖</span>
-            <div class="messageText">Typing...</div>
-        </div>
-    `;
-    chatMessages.appendChild(typingDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    const requestBody = { query: message, tool_history: [] };
+    let usingPageContext = false;
+    activeChatController = new AbortController();
+    agentRunCancelled = false;
+    setAgentRunning(true);
 
     try {
-        // Call backend API
-        const response = await fetch(`${BACKEND_URL}/chat`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: message })
-        });
+        usingPageContext = await attachCurrentPageContext(requestBody);
 
-        const data = await response.json();
+        for (let step = 0; step < MAX_AGENT_STEPS; step++) {
+            if (agentRunCancelled) throw new DOMException("Task stopped", "AbortError");
 
-        // Remove typing indicator
-        const indicator = document.getElementById("typingIndicator");
-        if (indicator) indicator.remove();
+            setAgentStatus(step === 0 ? "Aiva is thinking…" : `Aiva is planning step ${step + 1}…`);
+            const response = await fetch(`${BACKEND_URL}/chat`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(requestBody),
+                signal: activeChatController.signal
+            });
 
-        // Add AI response
-        addMessage(data.response || "I'm here to help! How can I assist you?", false);
+            if (!response.ok) {
+                throw new Error(`Chat request failed with status ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (data.status !== "tool_call") {
+                addMessage(data.response || "I'm here to help! How can I assist you?", false, usingPageContext);
+                return;
+            }
+
+            if (!Array.isArray(data.tool_calls) || data.tool_calls.length === 0) {
+                throw new Error("The assistant returned an empty tool request.");
+            }
+
+            for (const toolCall of data.tool_calls) {
+                if (agentRunCancelled) throw new DOMException("Task stopped", "AbortError");
+
+                const actionDescription = describeToolCall(toolCall);
+                setAgentStatus(`${actionDescription}…`);
+                addAgentAction(actionDescription);
+
+                const result = await executeBrowserTool(toolCall.name, toolCall.arguments);
+                requestBody.tool_history.push({
+                    tool_call_id: toolCall.id,
+                    name: toolCall.name,
+                    arguments: toolCall.arguments || {},
+                    result: JSON.stringify(result)
+                });
+            }
+
+            usingPageContext = (await attachCurrentPageContext(requestBody)) || usingPageContext;
+        }
+
+        addMessage(`I stopped after ${MAX_AGENT_STEPS} steps to avoid an accidental loop.`, false, usingPageContext);
 
     } catch (error) {
-        console.error("Chat error:", error);
-
-        // Remove typing indicator
-        const indicator = document.getElementById("typingIndicator");
-        if (indicator) indicator.remove();
-
-        // Fallback response
-        const fallbackResponses = [
-            "I'm here to help you with your wellness journey! What would you like to know?",
-            "That's an interesting question! I can help you with wellness tips, exercise tracking, or general browsing assistance.",
-            "I'm your AI wellness assistant. Feel free to ask me about health tips, exercises, or anything else!",
-            "Great question! I'm designed to support your wellness goals. How can I assist you today?",
-            "I'm always here to help! Whether it's about fitness, nutrition, or just browsing, I've got you covered."
-        ];
-        const randomResponse = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
-        addMessage(randomResponse, false);
+        if (error.name === "AbortError" || agentRunCancelled) {
+            addMessage("Task stopped.", false, usingPageContext);
+        } else {
+            console.error("Chat error:", error);
+            addMessage(`I couldn't complete that task: ${error.message}`, false, usingPageContext);
+        }
+    } finally {
+        activeChatController = null;
+        setAgentStatus("");
+        setAgentRunning(false);
     }
 }
+
+stopAgentBtn.onclick = () => {
+    if (!activeChatController) return;
+    agentRunCancelled = true;
+    setAgentStatus("Stopping…");
+    activeChatController.abort();
+    try {
+        webview.stop();
+    } catch (error) {
+        console.warn("Unable to stop the current page load:", error);
+    }
+};
 
 // Send button click
 sendChatBtn.onclick = sendMessage;
@@ -1005,6 +1624,7 @@ document.addEventListener("click", (e) => {
 });
 
 // Initialize
+initializeSidebar();
 renderShortcuts();
 showStartupReminders();
 fetchData();

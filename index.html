@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Wellness Browser</title>
+    <title>Aiva-Agentic-browser</title>
     <link rel="stylesheet" href="style.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -14,6 +14,87 @@
     <!-- BACKGROUND LAYER -->
     <div id="browserBackground" class="browserBackground"></div>
     <div class="backgroundOverlay"></div>
+
+    <!-- ARC/ZEN-STYLE BROWSER SIDEBAR -->
+    <aside id="browserSidebar" class="browserSidebar">
+        <div class="sidebarResizeHandle" id="sidebarResizeHandle"></div>
+        <div class="sidebarHeader">
+            <button id="homeBtn" class="brandButton" title="Aiva home">
+                <span class="brandMark">A</span>
+                <span class="brandName">Aiva</span>
+            </button>
+            <button id="collapseSidebarBtn" class="sidebarIconBtn" title="Collapse sidebar">«</button>
+        </div>
+
+        <div class="sidebarNavControls">
+            <button id="backBtn" class="sidebarIconBtn" title="Back">‹</button>
+            <button id="forwardBtn" class="sidebarIconBtn" title="Forward">›</button>
+            <button id="reloadBtn" class="sidebarIconBtn" title="Reload">↻</button>
+        </div>
+
+        <div class="sidebarAddress">
+            <span class="searchIcon">⌕</span>
+            <input id="urlBar" type="text" placeholder="Search or enter URL" />
+        </div>
+
+        <div class="sidebarSection essentialsSection">
+            <div class="sidebarSectionHeader">
+                <span>Essentials</span>
+            </div>
+            <div id="sidebarFavorites" class="sidebarFavorites">
+                <button class="favoriteTile" data-url="https://www.youtube.com" title="YouTube">
+                    <img src="https://www.google.com/s2/favicons?sz=64&domain=youtube.com" alt="">
+                    <span>YouTube</span>
+                </button>
+                <button class="favoriteTile" data-url="https://notebooklm.google.com" title="NotebookLM">
+                    <img src="https://www.google.com/s2/favicons?sz=64&domain=notebooklm.google.com" alt="">
+                    <span>NotebookLM</span>
+                </button>
+                <button class="favoriteTile" data-url="https://github.com" title="GitHub">
+                    <img src="https://www.google.com/s2/favicons?sz=64&domain=github.com" alt="">
+                    <span>GitHub</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="sidebarWorkspaceHeader">
+            <div>
+                <span class="workspaceEyebrow">SPACE</span>
+                <strong id="activeWorkspaceName">Personal</strong>
+            </div>
+            <button id="newTabBtn" class="sidebarIconBtn" title="New tab">＋</button>
+        </div>
+
+        <div class="sidebarSection sidebarListSection">
+            <div class="sidebarSectionHeader">
+                <span>Pinned</span>
+                <button id="pinCurrentTabBtn" class="sectionActionBtn" title="Pin current tab">＋</button>
+            </div>
+            <div id="sidebarPinnedList" class="sidebarTabList"></div>
+        </div>
+
+        <div class="sidebarSection sidebarListSection tabsSection">
+            <div class="sidebarSectionHeader">
+                <span>Tabs</span>
+            </div>
+            <div id="sidebarTabsList" class="sidebarTabList"></div>
+        </div>
+
+        <div class="sidebarFooter">
+            <div id="workspaceSwitcher" class="workspaceSwitcher">
+                <button class="workspaceButton" data-workspace="personal" title="Personal">◉</button>
+                <button class="workspaceButton" data-workspace="work" title="Work">◆</button>
+                <button class="workspaceButton" data-workspace="research" title="Research">✦</button>
+            </div>
+            <div class="sidebarUtilityRow">
+                <button id="cameraBtn" class="sidebarIconBtn" title="Capture screenshot">▣</button>
+                <button id="downloadBtn" class="sidebarIconBtn" title="Downloads">⇩</button>
+                <button id="layersBtn" class="sidebarIconBtn" title="Extensions">◇</button>
+                <button id="customizeBtn" class="sidebarIconBtn" title="Customize wallpaper">◐</button>
+                <button id="menuBtn" class="sidebarIconBtn" title="Menu">•••</button>
+            </div>
+        </div>
+    </aside>
 
     <!-- DASHBOARD -->
     <div id="dashboard" class="dashboard">
@@ -79,21 +160,27 @@
                     <h3>Face Scanner</h3>
                 </div>
 
-                <div id="faceScanError" class="errorBannerSmall">
+                <div id="faceScanError" class="errorBannerSmall hidden">
                     ✕ Connection Error: Cannot reach backend server.<br>Is it running?
                 </div>
 
                 <div class="videoWrapper">
-                    <video id="selfieVideo" autoplay muted></video>
+                    <div id="faceScannerIdle" class="faceScannerIdle">
+                        <span class="idleCameraIcon">◉</span>
+                        <strong>Camera is off</strong>
+                        <span>Start only when you want face analysis.</span>
+                    </div>
+                    <video id="selfieVideo" class="hidden" autoplay muted></video>
                 </div>
 
                 <div class="faceScanStatus">
-                    <span class="eyeIcon">👁</span> Analyzing facial expressions to detect fatigue and stress levels
+                    <span class="eyeIcon">👁</span> Face analysis is paused
                 </div>
 
                 <div class="analyzingLoader" id="authStatus">
-                    <span class="statusDot on"></span> Analyzing...
+                    <span class="statusDot"></span> Scanner off
                 </div>
+                <button id="toggleFaceScannerBtn" class="faceScannerToggle" type="button">Start Face Scanner</button>
             </div>
             <!-- Phone Usage Warning -->
             <div id="phoneWarning" class="phoneWarning hidden">
@@ -116,56 +203,12 @@
 
     <!-- WEBVIEW WRAPPER (Hidden by default) -->
     <div id="webWrap" class="webWrap hidden">
-        <button id="floatingHomeBtn" class="floatingHomeBtn" title="Back to Home">⌂ Home</button>
         <webview id="webview" class="webview" src="about:blank" allowpopups></webview>
     </div>
 
     <!-- BOTTOM REMINDER CONTAINER -->
     <div id="reminderContainer" class="reminderContainer hidden">
         <!-- Reminders will be injected here via JS -->
-    </div>
-
-    <!-- GLOBAL BOTTOM BROWSER BAR -->
-    <div id="bottomBrowserBar" class="bottomBrowserBar">
-        <!-- Bookmark Bar -->
-        <div id="bookmarkBar" class="bookmarkBar">
-            <div class="bookmarkItem" onclick="navigate('https://www.youtube.com')">
-                <img src="https://www.google.com/s2/favicons?sz=64&domain=youtube.com" alt="YouTube">
-                <span>YouTube</span>
-            </div>
-            <div class="bookmarkItem" onclick="navigate('https://notebooklm.google.com')">
-                <img
-                    src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABwAAAAcCAMAAABF0y+mAAAAaVBMVEVHcEwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///9jY2P5+fnW1tZZWVny8vJQUFC+vr6np6dxcXGBgYE4ODiMjIy3t7fGxsbo6OgTExMoKCi/T8vOAAAAEHRSTlMApeC+lRtnVDRECyl9+IPuvtK9QwAAAQxJREFUKJF9ku2igiAMhv1Gj1kM0PxM6/4v8owNE816fw0eYO/GgmBTLrJMpMGJRCydwvKA8pv0FP/5LJEHFRuLj0xKsbLwk0mZMyvW9bOfBvWmDN2iNkB6rKYtyzjuALr69epngJp3rOWIoge07sbYOHoNgpSCHq/Ny2Imu9BAexF2hoJGY0ZjNOi7lHfonKULmUEjgw2UBqRGE0y5OehmVAOl0ggmGLnUhO0stgqNWMGEDhRDerbFhGocyKc2eEDxs4LhzL4aTNis0JXSwpPggHbeMHJNaLkyLKLf4GVr36fox6tzluy/bKfq25BYlT9GwRui65Hlu9GMfBQeh7pYR7BKToe+FJkofPIPgecmYav2MX4AAAAASUVORK5CYII=">
-                <span>NotebookLM</span>
-            </div>
-            <div class="bookmarkItem" onclick="navigate('https://www.google.com/android/find/people')">
-                <img src="https://www.gstatic.com/images/branding/productlogos/find_my_device_round/v7/192px.svg"
-                    alt="Google FindHub">
-                <span>Google FindHub</span>
-            </div>
-        </div>
-
-        <!-- Navigation Bar -->
-        <div id="navigationBar" class="navigationBar">
-            <div class="navControls">
-                <button id="backBtn" title="Back">‹</button>
-                <button id="forwardBtn" title="Forward">›</button>
-                <button id="reloadBtn" title="Reload">↻</button>
-            </div>
-            <div class="urlInputWrapper">
-                <span class="searchIcon">🔍</span>
-                <input id="urlBar" type="text" placeholder="Enter search or web address" />
-            </div>
-            <div class="extraTools">
-                <button id="cameraBtn" title="Camera"><img src="assets/camera_icon.png" alt="Camera"
-                        class="tool-icon"></button>
-                <button id="downloadBtn" title="Downloads">📥</button>
-                <button id="layersBtn" title="Extensions">🧱</button>
-                <button id="customizeBtn" title="Customize Wallpaper">🖼️</button>
-                <button id="menuBtn" title="Menu">≡</button>
-                <button id="homeBtn" title="Home"><img src="assets/home_icon.png" alt="Home" class="tool-icon"></button>
-            </div>
-        </div>
     </div>
 
     <!-- HEALTH CARE TRIGGER -->
@@ -234,7 +277,7 @@
         <div class="chatHeader">
             <div class="chatHeaderTitle">
                 <span class="aiIcon">🤖</span>
-                <span>AI Wellness Assistant</span>
+                <span>Aiva Agentic Assistant</span>
             </div>
             <button id="closeChatBtn" class="closeChatBtn" title="Close">✕</button>
         </div>
@@ -246,9 +289,11 @@
                 </div>
             </div>
         </div>
+        <div id="agentStatus" class="agentStatus hidden" aria-live="polite"></div>
         <div class="chatInputArea">
             <input type="text" id="chatInput" placeholder="Ask me anything..." />
-            <button id="sendChatBtn">
+            <button id="stopAgentBtn" class="hidden" type="button" title="Stop current task">Stop</button>
+            <button id="sendChatBtn" type="button" title="Send message">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
                     <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 8L11 13" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round" />

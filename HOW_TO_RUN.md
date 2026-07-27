@@ -1,4 +1,4 @@
-# 🚀 How to Run the Wellness Browser Application
+# 🚀 How to Run Aiva-Agentic-browser
 
 ## Quick Start Guide
 
@@ -20,7 +20,7 @@ cd "c:\Users\Dell\OneDrive\Desktop\New folder\Microsoft\Imagine-Cup"
 npm start
 ```
 
-This will launch the Electron-based Wellness Browser application.
+This will launch the Electron-based Aiva-Agentic-browser application.
 
 ---
 

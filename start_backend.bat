@@ -1,10 +1,10 @@
 @echo off
-title Wellness Browser - Backend Server
+title Aiva-Agentic-browser - Backend Server
 color 0A
 
 echo.
 echo ============================================================
-echo   Wellness Browser - Backend Server
+echo   Aiva-Agentic-browser - Backend Server
 echo ============================================================
 echo.
 

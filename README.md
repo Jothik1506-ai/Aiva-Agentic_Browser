@@ -1,13 +1,13 @@
-# 🌟 AIVA — Agentic Wellness Browser
+# 🌟 Aiva-Agentic-browser
 
-AIVA is a desktop browser (Electron) built around two ideas: a **wellness layer**
+Aiva-Agentic-browser is a desktop browser (Electron) built around two ideas: a **wellness layer**
 (facial fatigue detection, posture tracking, focus mode, guided breathing/
 meditation/neck exercises) and, going forward, an **agentic layer** — an AI
 assistant that doesn't just answer questions in a side panel, but can act on the
 browser itself: read pages, navigate, and eventually complete multi-step tasks on
 the user's behalf.
 
-Today it ships as a working wellness browser with an AI chat assistant. The
+Today it ships as an agentic browser with integrated wellness features and an AI chat assistant. The
 agentic capability (AI controlling the browser) is the active area of development —
 see [Roadmap](#-roadmap) below.
 
@@ -24,7 +24,7 @@ roadmap.
 
 **Paste this into your IDE/AI assistant when you start working in this repo:**
 
-> I'm working in the AIVA Agentic Browser repo (Electron + FastAPI wellness
+> I'm working in the Aiva-Agentic-browser repo (Electron + FastAPI wellness
 > browser being evolved into an agentic browser). Read `.claude/CLAUDE.md` at the
 > repo root first — it has the architecture, known environment gotchas (missing
 > Python deps, a numpy version conflict, the real backend port, an Electron
@@ -125,7 +125,7 @@ Aiva-Agentic_Browser/
 ├── backend/
 │   ├── server.py          # FastAPI backend — AI chat, face/pose analysis, all APIs
 │   └── *.pt / *.task      # YOLOv8 + MediaPipe models (some git-ignored)
-├── index.html             # Dashboard + browser shell (<webview>-based)
+├── index.html             # Dashboard + vertical sidebar + initial webview host
 ├── style.css              # All styling, plain CSS with custom properties
 ├── renderer.js             # All frontend logic — no bundler, no framework
 ├── main.js                # Electron main process (creates window, spawns backend)
@@ -140,25 +140,32 @@ Aiva-Agentic_Browser/
 
 ## 🔧 Core Features (today)
 
-- 🤖 **AI Wellness Assistant** — chat-based wellness/productivity Q&A via OpenAI.
-- ✅ **Facial Fatigue Detection** — MediaPipe face mesh (EAR/MAR-based stress signals).
+- 🤖 **Aiva Agentic Assistant** — page-aware Q&A plus model-driven navigation,
+  history controls, reload, and page reading.
+- 🗂️ **Arc/Zen-style vertical sidebar** — Essentials, pinned tabs, real multi-webview
+  tabs, Personal/Work/Research spaces, resizing, fully hidden left-edge auto-reveal,
+  and local persistence.
+- ✅ **Opt-in Facial Fatigue Detection** — the camera and one-second analysis loop
+  run only after the user starts Face Scanner and are fully released on Stop.
 - ✅ **Posture & Squat Tracking** — YOLOv8-pose powered exercise monitoring.
 - 🛡️ **Focus Mode** — blocks distracting domains, swaps quick-launch shortcuts.
 - 📏 **Ultra-slim browser UI** with a real `<webview>` for actual web browsing.
 - 🧘 **Guided wellness breaks** — breathing, neck exercise, and meditation mini-apps.
 - 🎨 **Wallpaper picker** with glassmorphism styling.
 
-## 🎯 Roadmap: becoming an agentic browser
+## 🎯 Agentic browser roadmap
 
-The AI assistant currently only answers wellness questions — it has no awareness
-of the current page and can't act on the browser. Planned progression (smallest
-first):
+The assistant can now navigate, inspect pages, and run bounded sequences of browser
+tools. Planned progression (smallest first):
 
-1. **Navigate + read** — chat can open URLs and read/summarize the current page.
-2. **Navigate + read + act** — chat can click elements and fill forms based on the
+1. **Navigate + read (implemented)** — chat can open URLs and read/summarize the current page.
+2. **Real browser tools (implemented)** — OpenAI tool-calling drives navigation,
+   back/forward, reload, URL inspection, and page reading. Runs show action progress,
+   stop after eight model steps, and can be cancelled by the user.
+3. **Page interaction** — chat can click elements and fill forms based on the
    page's DOM.
-3. **Full autonomous agent** — multi-step planning across pages with tool-use,
-   step limits, and a stop mechanism.
+4. **Full autonomous agent** — richer planning, recovery, permissions, audit logs,
+   and reusable workflows across multiple pages.
 
 See `.claude/CLAUDE.md` → "Agentic browser roadmap" for the concrete extension
 points (`/api/chat`, `renderer.js`'s chat handler, `preload.js`).

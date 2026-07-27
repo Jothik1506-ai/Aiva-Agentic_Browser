@@ -42,7 +42,7 @@ start_backend.bat
 When the backend starts successfully, you should see:
 ```
 ============================================================
-🚀 Starting Wellness Browser Backend Server
+🚀 Starting Aiva-Agentic-browser Backend Server
 ============================================================
 📍 Server URL: http://localhost:5000
 📍 API Base: http://localhost:5000/api
