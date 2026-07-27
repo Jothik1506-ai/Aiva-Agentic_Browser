@@ -14,6 +14,9 @@
   --sidebar-width: 276px;
   --sidebar-expanded-width: 276px;
   --top-bar-height: 44px;
+  /* Overridden per workspace by applyWorkspaceTheme() (Arc-style Spaces) */
+  --space-tint-top: rgba(45, 58, 51, 0.97);
+  --space-tint-bottom: rgba(26, 34, 30, 0.98);
 }
 
 body,
@@ -141,6 +144,19 @@ html {
   text-align: center;
 }
 
+.topBarKbdHint {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.42);
+  font-family: inherit;
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+  cursor: default;
+}
+
 .topBarAddressIconBtn {
   width: 22px;
   height: 22px;
@@ -191,11 +207,12 @@ html {
   flex-direction: column;
   gap: 10px;
   padding: 12px 10px 10px;
-  background: linear-gradient(180deg, rgba(45, 58, 51, 0.97), rgba(26, 34, 30, 0.98));
+  background: linear-gradient(180deg, var(--space-tint-top), var(--space-tint-bottom));
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 12px 0 30px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(28px) saturate(140%);
-  transition: width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+    background 0.45s ease;
   overflow: hidden;
   user-select: none;
 }
@@ -2292,4 +2309,190 @@ body.focusModeActive #customizeBtn {
   height: 32px;
   object-fit: contain;
   display: block;
+}
+/* Per-tab loading state: the favicon slot becomes a spinner while loading */
+.sidebarTabSpinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--accent-color);
+  animation: tabSpin 0.7s linear infinite;
+}
+
+@keyframes tabSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------------- ARC-STYLE COMMAND PALETTE ---------------- */
+.commandPalette {
+  position: fixed;
+  inset: 0;
+  z-index: 6500;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 14vh;
+  background: rgba(10, 14, 12, 0.55);
+  backdrop-filter: blur(6px);
+  animation: paletteFadeIn 0.16s ease-out;
+}
+
+.commandPalette.hidden {
+  display: none !important;
+}
+
+@keyframes paletteFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.commandPaletteBox {
+  width: min(640px, calc(100vw - 48px));
+  max-height: 62vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(48, 62, 54, 0.98), rgba(28, 37, 32, 0.99));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  animation: paletteRise 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes paletteRise {
+  from { transform: translateY(-10px) scale(0.985); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.commandPaletteInputRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.commandPaletteIcon {
+  color: var(--accent-color);
+  font-size: 15px;
+}
+
+#commandPaletteInput {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-color);
+  font-size: 16px;
+  font-family: inherit;
+}
+
+#commandPaletteInput::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.commandPaletteHint {
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted-text);
+  font-size: 10px;
+  font-family: inherit;
+}
+
+.commandPaletteResults {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.commandPaletteGroup {
+  padding: 10px 10px 4px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.commandPaletteItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.commandPaletteItem:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.commandPaletteItem.selected {
+  background: rgba(127, 200, 169, 0.14);
+  border-color: rgba(127, 200, 169, 0.28);
+}
+
+.commandPaletteItemIcon {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.commandPaletteItemIcon img {
+  width: 16px;
+  height: 16px;
+}
+
+.commandPaletteItemText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.commandPaletteItemTitle {
+  color: var(--text-color);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.commandPaletteItemSub {
+  color: var(--muted-text);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.commandPaletteItemBadge {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted-text);
+  font-size: 10px;
+}
+
+.commandPaletteEmpty {
+  padding: 26px 14px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12px;
 }

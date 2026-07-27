@@ -72,10 +72,32 @@ Backend endpoints (`backend/server.py`):
 | POST | `/api/chat` | Aiva Agentic Assistant chat; supports current-page context and browser tool-call continuations |
 
 `/api/chat` accepts optional current-page context and a typed `tool_history`.
-OpenAI can request `navigate`, `read_page`, `get_current_url`, `go_back`,
-`go_forward`, or `reload_page`; `renderer.js` executes one ordered tool call at a
-time and returns its result for the next model turn. Runs are capped at eight model
-steps and expose a Stop control.
+`renderer.js` executes one ordered tool call at a time (`parallel_tool_calls=False`)
+and returns its result for the next model turn. Runs are capped at
+`MAX_AGENT_STEPS` (14) and expose a Stop control that aborts the in-flight fetch.
+Tools are defined in `BROWSER_TOOLS` (`server.py`) and executed in
+`executeBrowserTool()` (`renderer.js`) — both must be updated together:
+
+| Group | Tools |
+|---|---|
+| Navigation | `navigate`, `go_back`, `go_forward`, `reload_page`, `get_current_url` |
+| Reading | `read_page`, `find_elements`, `scroll_page` |
+| Interaction | `click_element`, `fill_input` |
+| Tabs | `open_tab`, `list_tabs`, `switch_tab`, `close_tab` |
+
+Page interaction works by index, not selector: `find_elements` walks the guest
+DOM, filters to visible/enabled interactive nodes, stamps each with a
+`data-aiva-idx` attribute, and returns the list. `click_element`/`fill_input`
+then re-find the node by that attribute. Indices go stale whenever the page
+changes, so the model is told to re-run `find_elements` after any navigation.
+`fill_input` assigns through the prototype `value` setter so React-style
+frameworks see the change. After a click or a submitted fill,
+`settleAfterInteraction()` waits ~400ms to see whether a navigation started and,
+if so, waits for it to finish before the next step runs.
+
+Backend validates replayed `tool_history` against `BROWSER_TOOL_NAMES` and caps
+both history length and per-result size before rebuilding the OpenAI message
+array.
 
 Spotify: `requirements.txt` includes `spotipy` and `.env.example` has
 `SPOTIPY_CLIENT_ID`/`SECRET`, but there is no actual Spotify API integration wired up
@@ -148,22 +170,27 @@ Discussed direction, smallest-first:
    returns results to the model, enforces an eight-step limit, and supports user
    cancellation. Tool calls are sequential (`parallel_tool_calls=False`) so their
    history stays ordered.
-3. **Page interaction** — AI can click elements / fill forms driven by DOM
-   inspection it reads back from the page (needs a way to extract interactive
-   elements + selectors from the webview, likely via `webContents.executeJavaScript`
-   through the `<webview>`'s guest page).
-4. **Full autonomous multi-step agent** — richer planning, recovery, permissions,
-   audit logs, and reusable workflows across multiple pages.
+3. **Page interaction (implemented)** — `find_elements` / `click_element` /
+   `fill_input` / `scroll_page` let the model act on the page, plus
+   `open_tab` / `list_tabs` / `switch_tab` / `close_tab` for tab control. See the
+   "Ports & endpoints" section above for how indexing and settling work.
+4. **Full autonomous multi-step agent (next)** — richer planning and recovery,
+   a user-facing permission prompt before consequential actions, audit logs, and
+   reusable saved workflows. The guardrails today are only the step cap, the Stop
+   button, and system-prompt instructions telling the model not to enter
+   credentials/payment details or take irreversible actions — none of that is
+   *enforced* in code, which is the main gap to close for this milestone.
 
-`/api/chat` and `renderer.js`'s chat handling (`sendMessage()`, around line ~1080) are
-the two places this will need to grow from. Milestone 1 reads the guest page through
-`webview.executeJavaScript()` directly. `preload.js` is currently empty, and there is
-no context isolation (`nodeIntegration: true, contextIsolation: false` in `main.js`'s
-`BrowserWindow` config) — that's a real security looseness worth revisiting once the
-webview starts executing AI-driven actions on arbitrary sites.
+`/api/chat` (`BROWSER_TOOLS` + the system prompt) and `renderer.js`'s
+`executeBrowserTool()` / `sendMessage()` are the two places this grows from.
 
-The renderer now has tab lifecycle and active-tab state, but `/api/chat` does not
-yet expose `open_tab`, `list_tabs`, `switch_tab`, or `close_tab` tools to the model.
+**Security debt worth prioritising**: `preload.js` is still empty and the window
+runs with `nodeIntegration: true, contextIsolation: false` (`main.js`). That was
+already loose; now that the AI executes injected scripts against arbitrary sites,
+any renderer or guest-page compromise reaches full Node. Migrating to
+`contextIsolation: true` plus a narrow `contextBridge` IPC surface is a large but
+increasingly important change. Page text is already treated as untrusted in the
+system prompt, but that is a mitigation, not a boundary.
 
 ## Conventions
 

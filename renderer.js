@@ -297,6 +297,171 @@ async function getPageContent() {
     }
 }
 
+// ------------------- Agent page interaction -------------------
+// These run inside the guest page. Elements are tagged with data-aiva-idx by
+// findPageElements() so a later click/fill can re-find the exact same node,
+// which is more reliable than re-deriving position from a stale index.
+const AGENT_INTERACTIVE_SELECTOR =
+    'a[href], button, input:not([type="hidden"]), textarea, select, ' +
+    '[role="button"], [role="link"], [role="textbox"], [contenteditable="true"]';
+const AGENT_MAX_ELEMENTS = 120;
+
+async function runInPage(script) {
+    if (!webview || typeof webview.executeJavaScript !== "function") {
+        return { success: false, error: "No page is open in the browser." };
+    }
+    const currentUrl = webview.getURL();
+    if (!currentUrl || currentUrl === "about:blank") {
+        return { success: false, error: "No page is open. Navigate to a page first." };
+    }
+    try {
+        const raw = await webview.executeJavaScript(script);
+        return JSON.parse(raw);
+    } catch (error) {
+        return { success: false, error: error.message || "The page script could not run." };
+    }
+}
+
+function findPageElements(keyword) {
+    return runInPage(`(function () {
+        var keyword = ${JSON.stringify(keyword || "")}.toLowerCase();
+        document.querySelectorAll('[data-aiva-idx]').forEach(function (el) {
+            el.removeAttribute('data-aiva-idx');
+        });
+        var nodes = Array.from(document.querySelectorAll(${JSON.stringify(AGENT_INTERACTIVE_SELECTOR)}));
+        var out = [];
+        var idx = 0;
+        for (var i = 0; i < nodes.length && idx < ${AGENT_MAX_ELEMENTS}; i++) {
+            var el = nodes[i];
+            if (el.disabled) continue;
+            var rect = el.getBoundingClientRect();
+            if (rect.width < 2 || rect.height < 2) continue;
+            var style = window.getComputedStyle(el);
+            if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') continue;
+
+            var tag = el.tagName.toLowerCase();
+            var type = (el.getAttribute('type') || '').toLowerCase();
+            var isPassword = type === 'password';
+            var label = (
+                el.getAttribute('aria-label') ||
+                el.getAttribute('placeholder') ||
+                (isPassword ? '' : (el.value || '')) ||
+                (el.innerText || '') ||
+                el.getAttribute('title') ||
+                el.getAttribute('name') ||
+                ''
+            ).replace(/\\s+/g, ' ').trim().slice(0, 120);
+
+            if (keyword && (label + ' ' + tag + ' ' + type).toLowerCase().indexOf(keyword) === -1) continue;
+
+            el.setAttribute('data-aiva-idx', String(idx));
+            var entry = { index: idx, tag: tag, label: label };
+            if (type) entry.type = type;
+            if (tag === 'input' || tag === 'textarea' || el.isContentEditable) entry.editable = true;
+            if (tag === 'a' && el.href) entry.href = el.href.slice(0, 200);
+            out.push(entry);
+            idx++;
+        }
+        return JSON.stringify({
+            success: true,
+            url: location.href,
+            count: out.length,
+            truncated: idx >= ${AGENT_MAX_ELEMENTS},
+            elements: out
+        });
+    })()`);
+}
+
+function clickPageElement(index) {
+    return runInPage(`(function () {
+        var el = document.querySelector('[data-aiva-idx="' + ${JSON.stringify(String(index))} + '"]');
+        if (!el) {
+            return JSON.stringify({
+                success: false,
+                error: 'No element with index ${index}. The page may have changed - call find_elements again.'
+            });
+        }
+        var label = (el.getAttribute('aria-label') || el.innerText || el.value || '').replace(/\\s+/g, ' ').trim().slice(0, 120);
+        try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e) {}
+        el.click();
+        return JSON.stringify({ success: true, clicked: label, tag: el.tagName.toLowerCase() });
+    })()`);
+}
+
+function fillPageInput(index, text, submit) {
+    return runInPage(`(function () {
+        var el = document.querySelector('[data-aiva-idx="' + ${JSON.stringify(String(index))} + '"]');
+        if (!el) {
+            return JSON.stringify({
+                success: false,
+                error: 'No element with index ${index}. The page may have changed - call find_elements again.'
+            });
+        }
+        var value = ${JSON.stringify(String(text ?? ""))};
+        try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+        el.focus();
+
+        if (el.isContentEditable) {
+            el.textContent = value;
+        } else {
+            // Frameworks like React track value via a prototype setter; assigning
+            // el.value directly bypasses their listeners and the edit is dropped.
+            var proto = Object.getPrototypeOf(el);
+            var descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+            if (descriptor && descriptor.set) descriptor.set.call(el, value);
+            else el.value = value;
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+
+        var submitted = false;
+        if (${submit ? "true" : "false"}) {
+            var enter = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true };
+            el.dispatchEvent(new KeyboardEvent('keydown', enter));
+            el.dispatchEvent(new KeyboardEvent('keyup', enter));
+            var form = el.form || el.closest('form');
+            if (form && typeof form.requestSubmit === 'function') { form.requestSubmit(); submitted = true; }
+            else if (form) { form.submit(); submitted = true; }
+        }
+        return JSON.stringify({ success: true, filled: value.slice(0, 80), submitted: submitted });
+    })()`);
+}
+
+function scrollPage(direction) {
+    return runInPage(`(function () {
+        var direction = ${JSON.stringify(String(direction || "down"))};
+        var step = Math.round(window.innerHeight * 0.85);
+        if (direction === 'top') window.scrollTo({ top: 0 });
+        else if (direction === 'bottom') window.scrollTo({ top: document.body.scrollHeight });
+        else window.scrollBy({ top: direction === 'up' ? -step : step });
+        return JSON.stringify({
+            success: true,
+            scrollY: Math.round(window.scrollY),
+            pageHeight: Math.round(document.body.scrollHeight),
+            atBottom: window.innerHeight + window.scrollY >= document.body.scrollHeight - 4
+        });
+    })()`);
+}
+
+// A click can either do nothing, mutate the DOM, or start a navigation. Give a
+// navigation a moment to begin, and only then wait for it to finish, so the
+// agent's next step sees a settled page instead of a half-loaded one.
+function settleAfterInteraction(timeoutMs = 8000) {
+    const targetWebview = webview;
+    return new Promise((resolve) => {
+        let navigationStarted = false;
+        const onStart = () => { navigationStarted = true; };
+        targetWebview.addEventListener("did-start-loading", onStart);
+
+        setTimeout(async () => {
+            targetWebview.removeEventListener("did-start-loading", onStart);
+            if (!navigationStarted) return resolve({ navigated: false });
+            const result = await waitForWebviewLoad(timeoutMs);
+            resolve({ navigated: true, url: result.url, loadError: result.error });
+        }, 400);
+    });
+}
+
 function waitForWebviewLoad(timeoutMs = 15000) {
     const targetWebview = webview;
     return new Promise((resolve) => {
@@ -394,6 +559,22 @@ const SIDEBAR_WORKSPACES = {
     research: "Research"
 };
 
+// Arc-style Spaces: each workspace tints the sidebar and accent colour so the
+// active space is identifiable at a glance without reading its name.
+const SIDEBAR_WORKSPACE_THEMES = {
+    personal: { accent: "#7fc8a9", tintTop: "rgba(45, 58, 51, 0.97)", tintBottom: "rgba(26, 34, 30, 0.98)" },
+    work: { accent: "#7aa7e0", tintTop: "rgba(42, 52, 68, 0.97)", tintBottom: "rgba(24, 30, 42, 0.98)" },
+    research: { accent: "#c39ae0", tintTop: "rgba(56, 45, 66, 0.97)", tintBottom: "rgba(32, 25, 40, 0.98)" }
+};
+
+function applyWorkspaceTheme(workspace) {
+    const theme = SIDEBAR_WORKSPACE_THEMES[workspace] || SIDEBAR_WORKSPACE_THEMES.personal;
+    const root = document.documentElement.style;
+    root.setProperty("--accent-color", theme.accent);
+    root.setProperty("--space-tint-top", theme.tintTop);
+    root.setProperty("--space-tint-bottom", theme.tintBottom);
+}
+
 let sidebarTabs = [];
 let activeSidebarTabId = null;
 let activeSidebarWorkspace = localStorage.getItem(SIDEBAR_WORKSPACE_KEY) || "personal";
@@ -404,6 +585,14 @@ function createTabId() {
 
 function getSidebarTab(tabId) {
     return sidebarTabs.find((tab) => tab.id === tabId) || null;
+}
+
+// Shared ordering for anything that addresses tabs by position (keyboard
+// shortcuts, the command palette, and the agent's list_tabs/switch_tab tools)
+// so an index always means the same tab across all of them.
+function getOrderedWorkspaceTabs() {
+    const workspaceTabs = sidebarTabs.filter((tab) => tab.workspace === activeSidebarWorkspace);
+    return [...workspaceTabs.filter((tab) => tab.pinned), ...workspaceTabs.filter((tab) => !tab.pinned)];
 }
 
 function getDisplayTitle(url) {
@@ -548,6 +737,7 @@ function switchSidebarWorkspace(workspace) {
     if (!SIDEBAR_WORKSPACES[workspace]) return;
     activeSidebarWorkspace = workspace;
     localStorage.setItem(SIDEBAR_WORKSPACE_KEY, workspace);
+    applyWorkspaceTheme(workspace);
     const workspaceTabs = sidebarTabs.filter((tab) => tab.workspace === workspace);
     const target = workspaceTabs.find((tab) => tab.id === activeSidebarTabId)
         || workspaceTabs.find((tab) => tab.pinned)
@@ -689,14 +879,23 @@ function createSidebarTabItem(tab) {
         item.classList.remove("dragging");
     };
 
-    const favicon = document.createElement("img");
-    favicon.className = "sidebarTabFavicon";
-    favicon.src = tab.favicon || getFallbackFavicon(tab.url);
-    favicon.alt = "";
-    favicon.onerror = () => {
-        favicon.onerror = null;
-        favicon.src = "assets/home_icon.png";
-    };
+    // While a tab is loading its favicon slot becomes a spinner, so background
+    // tabs visibly report progress the way Arc/Chrome tabs do.
+    let leading;
+    if (tab.loading) {
+        leading = document.createElement("span");
+        leading.className = "sidebarTabSpinner";
+    } else {
+        leading = document.createElement("img");
+        leading.className = "sidebarTabFavicon";
+        leading.src = tab.favicon || getFallbackFavicon(tab.url);
+        leading.alt = "";
+        leading.onerror = () => {
+            leading.onerror = null;
+            leading.src = "assets/home_icon.png";
+        };
+    }
+    const favicon = leading;
 
     const label = document.createElement("span");
     label.className = "sidebarTabLabel";
@@ -745,13 +944,16 @@ function renderSidebarTabs() {
 }
 
 function persistSidebarState() {
-    const serializableTabs = sidebarTabs.map(({ view, ...tab }) => tab);
+    // `loading` is transient - persisting it would restore a tab stuck showing
+    // a spinner that never resolves, since no load is actually in flight.
+    const serializableTabs = sidebarTabs.map(({ view, loading, ...tab }) => tab);
     localStorage.setItem(SIDEBAR_TABS_STORAGE_KEY, JSON.stringify(serializableTabs));
     if (activeSidebarTabId) localStorage.setItem(SIDEBAR_ACTIVE_TAB_KEY, activeSidebarTabId);
     localStorage.setItem(SIDEBAR_WORKSPACE_KEY, activeSidebarWorkspace);
 }
 
 function initializeSidebar() {
+    applyWorkspaceTheme(activeSidebarWorkspace);
     const storedCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) !== "false";
     document.body.classList.toggle("sidebarCollapsed", storedCollapsed);
     const topSidebarToggleBtn = document.getElementById("topSidebarToggleBtn");
@@ -890,11 +1092,6 @@ function initializeSidebar() {
         document.body.classList.remove("is-resizing");
     };
 
-    function getOrderedWorkspaceTabs() {
-        const workspaceTabs = sidebarTabs.filter((tab) => tab.workspace === activeSidebarWorkspace);
-        return [...workspaceTabs.filter((tab) => tab.pinned), ...workspaceTabs.filter((tab) => !tab.pinned)];
-    }
-
     document.addEventListener("keydown", (event) => {
         if (event.ctrlKey && event.key.toLowerCase() === "t") {
             event.preventDefault();
@@ -939,11 +1136,20 @@ function attachWebviewEvents(view, tabId) {
     });
 
     view.addEventListener("did-start-loading", () => {
-        const currentUrl = view.getURL();
-        if (isFocusModeActive && isUrlDistraction(currentUrl)) {
+        // did-start-loading can fire before the guest is attached, when
+        // getURL()/canGoBack() still throw; the focus-mode check is retried on
+        // will-navigate and did-navigate anyway, so skipping it here is safe.
+        let currentUrl = "";
+        try { currentUrl = view.getURL(); } catch { currentUrl = ""; }
+        if (currentUrl && isFocusModeActive && isUrlDistraction(currentUrl)) {
             view.stop();
             if (view.canGoBack()) view.goBack();
             alert("Blocked by Focus Mode! 🛡️");
+        }
+        const loadingTab = getSidebarTab(tabId);
+        if (loadingTab) {
+            loadingTab.loading = true;
+            renderSidebarTabs();
         }
         if (tabId === activeSidebarTabId) logStatus("Loading...");
     });
@@ -951,6 +1157,7 @@ function attachWebviewEvents(view, tabId) {
     view.addEventListener("did-stop-loading", () => {
         const tab = getSidebarTab(tabId);
         if (!tab) return;
+        tab.loading = false;
         const url = view.getURL() || tab.url;
         tab.url = url;
         tab.title = url === "about:blank" ? "New Tab" : (view.getTitle() || getDisplayTitle(url));
@@ -972,6 +1179,14 @@ function attachWebviewEvents(view, tabId) {
         persistSidebarState();
         renderSidebarTabs();
     };
+
+    view.addEventListener("did-fail-load", (event) => {
+        if (event.isMainFrame === false) return;
+        const tab = getSidebarTab(tabId);
+        if (!tab || !tab.loading) return;
+        tab.loading = false;
+        renderSidebarTabs();
+    });
 
     view.addEventListener("did-navigate", updateNavigatedUrl);
     view.addEventListener("did-navigate-in-page", updateNavigatedUrl);
@@ -1220,6 +1435,9 @@ async function fetchData() {
                 console.error("Backend status check failed:", err);
             });
 
+        // Widget fetches are best-effort: the backend may still be booting
+        // (it loads CV models first), and a miss should stay silent rather
+        // than surfacing an unhandled rejection on every startup.
         // Weather
         fetch(`${BACKEND_URL}/weather`)
             .then(r => r.json())
@@ -1228,23 +1446,16 @@ async function fetchData() {
                     <div style="font-size:24px">${data.temp}</div>
                     <div>${data.condition}</div>
                 `;
-            });
-
-        // Apps
-        fetch(`${BACKEND_URL}/apps`)
-            .then(r => r.json())
-            .then(apps => {
-                // If backend provides apps, we can use them as defaults if we want,
-                // but for now let's stick to our local persistence for the "Add Shortcut" feel.
-                // renderShortcuts already handles defaults + customs.
-            });
+            })
+            .catch(() => {});
 
         // News
         fetch(`${BACKEND_URL}/news`)
             .then(r => r.json())
             .then(data => {
                 if (newsDataEl) newsDataEl.innerHTML = data.map(n => `<div style="margin-bottom:5px; font-size:12px"><b>${n.source}</b>: ${n.title}</div>`).join("");
-            });
+            })
+            .catch(() => {});
 
         // Stocks (Mock)
         if (stocksDataEl) stocksDataEl.innerHTML = `
@@ -1607,7 +1818,10 @@ const sendChatBtn = document.getElementById("sendChatBtn");
 const chatMessages = document.getElementById("chatMessages");
 const stopAgentBtn = document.getElementById("stopAgentBtn");
 const agentStatus = document.getElementById("agentStatus");
-const MAX_AGENT_STEPS = 8;
+// Page interaction turns one user request into many steps (find -> click ->
+// find again -> fill -> submit), so this is deliberately higher than the
+// navigation-only limit it replaced.
+const MAX_AGENT_STEPS = 14;
 let activeChatController = null;
 let agentRunCancelled = false;
 
@@ -1690,12 +1904,29 @@ function describeToolCall(toolCall) {
         get_current_url: "Checking the current URL",
         go_back: "Going back",
         go_forward: "Going forward",
-        reload_page: "Reloading the current page"
+        reload_page: "Reloading the current page",
+        find_elements: "Looking at what's on the page",
+        list_tabs: "Checking open tabs"
     };
-    if (toolCall.name === "navigate") {
-        return `Opening ${toolCall.arguments?.target || "the requested page"}`;
+    const args = toolCall.arguments || {};
+    switch (toolCall.name) {
+        case "navigate":
+            return `Opening ${args.target || "the requested page"}`;
+        case "open_tab":
+            return `Opening ${args.target || "a page"} in a new tab`;
+        case "click_element":
+            return `Clicking element ${args.index}`;
+        case "fill_input":
+            return `Typing "${String(args.text ?? "").slice(0, 40)}"${args.submit ? " and submitting" : ""}`;
+        case "scroll_page":
+            return `Scrolling ${args.direction || "down"}`;
+        case "switch_tab":
+            return `Switching to tab ${args.index}`;
+        case "close_tab":
+            return `Closing tab ${args.index}`;
+        default:
+            return labels[toolCall.name] || `Running ${toolCall.name}`;
     }
-    return labels[toolCall.name] || `Running ${toolCall.name}`;
 }
 
 async function attachCurrentPageContext(requestBody) {
@@ -1751,6 +1982,60 @@ async function executeBrowserTool(name, args = {}) {
                 const loadResult = waitForWebviewLoad();
                 webview.reload();
                 return await loadResult;
+            }
+            case "find_elements":
+                return await findPageElements(args.keyword);
+            case "click_element": {
+                const result = await clickPageElement(args.index);
+                if (!result.success) return result;
+                const settled = await settleAfterInteraction();
+                return { ...result, ...settled };
+            }
+            case "fill_input": {
+                const result = await fillPageInput(args.index, args.text, args.submit);
+                if (!result.success || !args.submit) return result;
+                const settled = await settleAfterInteraction();
+                return { ...result, ...settled };
+            }
+            case "scroll_page":
+                return await scrollPage(args.direction);
+            case "open_tab": {
+                if (!args.target) return { success: false, error: "No target was provided." };
+                createSidebarTab("about:blank", { activate: true });
+                return await navigate(args.target);
+            }
+            case "list_tabs": {
+                const ordered = getOrderedWorkspaceTabs();
+                return {
+                    success: true,
+                    workspace: SIDEBAR_WORKSPACES[activeSidebarWorkspace],
+                    tabs: ordered.map((tab, index) => ({
+                        index,
+                        title: tab.title,
+                        url: tab.url,
+                        pinned: tab.pinned,
+                        active: tab.id === activeSidebarTabId
+                    }))
+                };
+            }
+            case "switch_tab": {
+                const ordered = getOrderedWorkspaceTabs();
+                const target = ordered[args.index];
+                if (!target) {
+                    return { success: false, error: `No tab at index ${args.index}. Call list_tabs first.` };
+                }
+                selectSidebarTab(target.id);
+                return { success: true, index: args.index, title: target.title, url: target.url };
+            }
+            case "close_tab": {
+                const ordered = getOrderedWorkspaceTabs();
+                const target = ordered[args.index];
+                if (!target) {
+                    return { success: false, error: `No tab at index ${args.index}. Call list_tabs first.` };
+                }
+                const closedTitle = target.title;
+                closeSidebarTab(target.id);
+                return { success: true, closed: closedTitle };
             }
             default:
                 return { success: false, error: `Unsupported browser tool: ${name}` };
@@ -2005,5 +2290,230 @@ function renderMenuShortcuts() {
         menuShortcutsGrid.appendChild(shortcutEl);
     });
 }
+
+// ------------------- ARC-STYLE COMMAND PALETTE -------------------
+const commandPalette = document.getElementById("commandPalette");
+const commandPaletteInput = document.getElementById("commandPaletteInput");
+const commandPaletteResults = document.getElementById("commandPaletteResults");
+let paletteItems = [];
+let paletteSelectedIndex = 0;
+
+// Subsequence match: "gh" matches "GitHub". Exact prefixes and substrings
+// outrank scattered character hits so the obvious result lands first.
+function fuzzyScore(haystack, needle) {
+    if (!needle) return 1;
+    const text = String(haystack).toLowerCase();
+    const query = needle.toLowerCase();
+    if (text.startsWith(query)) return 1000 - text.length;
+    const direct = text.indexOf(query);
+    if (direct !== -1) return 500 - direct;
+
+    let score = 0;
+    let cursor = -1;
+    for (const char of query) {
+        const next = text.indexOf(char, cursor + 1);
+        if (next === -1) return -1;
+        score += next === cursor + 1 ? 3 : 1;
+        cursor = next;
+    }
+    return score;
+}
+
+function buildPaletteItems(query) {
+    const items = [];
+    const trimmed = query.trim();
+
+    if (trimmed) {
+        const looksLikeUrl = /^https?:\/\//i.test(trimmed) || /^[\w-]+(\.[\w-]+)+/.test(trimmed);
+        items.push({
+            group: "Actions",
+            icon: looksLikeUrl ? "🌐" : "🔎",
+            title: looksLikeUrl ? `Open ${trimmed}` : `Search for "${trimmed}"`,
+            sub: looksLikeUrl ? "Go to this address" : "Search the web",
+            badge: "Enter",
+            score: Number.MAX_SAFE_INTEGER,
+            run: () => navigate(trimmed)
+        });
+        items.push({
+            group: "Actions",
+            icon: "🤖",
+            title: `Ask Aiva: "${trimmed}"`,
+            sub: "Send this to the agentic assistant",
+            score: Number.MAX_SAFE_INTEGER - 1,
+            run: () => {
+                aiChatPanel.classList.remove("hidden");
+                chatInput.value = trimmed;
+                sendMessage();
+            }
+        });
+    }
+
+    getOrderedWorkspaceTabs().forEach((tab) => {
+        const score = fuzzyScore(`${tab.title} ${tab.url}`, trimmed);
+        if (score < 0) return;
+        items.push({
+            group: "Open tabs",
+            iconUrl: tab.favicon || getFallbackFavicon(tab.url),
+            title: tab.title,
+            sub: tab.url === "about:blank" ? "New Tab" : tab.url,
+            badge: tab.id === activeSidebarTabId ? "Current" : (tab.pinned ? "Pinned" : ""),
+            score,
+            run: () => selectSidebarTab(tab.id)
+        });
+    });
+
+    const shortcutPool = isFocusModeActive
+        ? educationalShortcuts
+        : [...defaultShortcuts.filter((app) => !hiddenDefaultShortcuts.includes(app.name)), ...customShortcuts];
+    shortcutPool.forEach((shortcut) => {
+        const score = fuzzyScore(`${shortcut.name} ${shortcut.url}`, trimmed);
+        if (score < 0) return;
+        items.push({
+            group: "Shortcuts",
+            iconUrl: getFallbackFavicon(shortcut.url),
+            title: shortcut.name,
+            sub: shortcut.url,
+            score,
+            run: () => navigate(shortcut.url)
+        });
+    });
+
+    const commands = [
+        { icon: "＋", title: "New Tab", run: () => { createSidebarTab("about:blank", { activate: true }); urlBar.focus(); } },
+        { icon: "◧", title: "Toggle Sidebar", run: () => document.getElementById("topSidebarToggleBtn")?.click() },
+        { icon: "📖", title: "Toggle Focus Mode", run: () => toggleFocusMode() },
+        { icon: "🌿", title: "Health and Care", run: () => document.getElementById("healthCareModal")?.classList.remove("hidden") },
+        { icon: "◉", title: "Toggle Face Scanner", run: () => (faceScannerActive ? stopFaceScanner() : startFaceScanner()) },
+        { icon: "🖼️", title: "Customize Wallpaper", run: () => document.getElementById("wallpaperPanel")?.classList.toggle("hidden") },
+        { icon: "▣", title: "Capture Screenshot", run: () => document.getElementById("cameraBtn")?.click() }
+    ];
+    Object.entries(SIDEBAR_WORKSPACES).forEach(([key, label]) => {
+        commands.push({ icon: "❖", title: `Switch to ${label} space`, run: () => switchSidebarWorkspace(key) });
+    });
+    commands.forEach((command) => {
+        const score = fuzzyScore(command.title, trimmed);
+        if (score < 0) return;
+        items.push({ group: "Commands", icon: command.icon, title: command.title, score, run: command.run });
+    });
+
+    return items.sort((a, b) => b.score - a.score).slice(0, 40);
+}
+
+function renderPaletteResults() {
+    commandPaletteResults.innerHTML = "";
+    if (!paletteItems.length) {
+        const empty = document.createElement("div");
+        empty.className = "commandPaletteEmpty";
+        empty.textContent = "No matches";
+        commandPaletteResults.appendChild(empty);
+        return;
+    }
+
+    let lastGroup = null;
+    paletteItems.forEach((item, index) => {
+        if (item.group !== lastGroup) {
+            const header = document.createElement("div");
+            header.className = "commandPaletteGroup";
+            header.textContent = item.group;
+            commandPaletteResults.appendChild(header);
+            lastGroup = item.group;
+        }
+
+        const row = document.createElement("div");
+        row.className = "commandPaletteItem" + (index === paletteSelectedIndex ? " selected" : "");
+
+        const icon = document.createElement("div");
+        icon.className = "commandPaletteItemIcon";
+        if (item.iconUrl) {
+            const img = document.createElement("img");
+            img.src = item.iconUrl;
+            img.onerror = () => { icon.textContent = "🌐"; };
+            icon.appendChild(img);
+        } else {
+            icon.textContent = item.icon || "•";
+        }
+
+        const text = document.createElement("div");
+        text.className = "commandPaletteItemText";
+        const title = document.createElement("div");
+        title.className = "commandPaletteItemTitle";
+        title.textContent = item.title;
+        text.appendChild(title);
+        if (item.sub) {
+            const sub = document.createElement("div");
+            sub.className = "commandPaletteItemSub";
+            sub.textContent = item.sub;
+            text.appendChild(sub);
+        }
+
+        row.append(icon, text);
+        if (item.badge) {
+            const badge = document.createElement("span");
+            badge.className = "commandPaletteItemBadge";
+            badge.textContent = item.badge;
+            row.appendChild(badge);
+        }
+
+        row.onmouseenter = () => {
+            paletteSelectedIndex = index;
+            commandPaletteResults.querySelectorAll(".commandPaletteItem").forEach((el, i) => {
+                el.classList.toggle("selected", i === index);
+            });
+        };
+        row.onclick = () => runPaletteItem(index);
+        commandPaletteResults.appendChild(row);
+    });
+}
+
+function refreshPalette() {
+    paletteItems = buildPaletteItems(commandPaletteInput.value);
+    paletteSelectedIndex = 0;
+    renderPaletteResults();
+}
+
+function openCommandPalette() {
+    commandPalette.classList.remove("hidden");
+    commandPaletteInput.value = "";
+    refreshPalette();
+    commandPaletteInput.focus();
+}
+
+function closeCommandPalette() {
+    commandPalette.classList.add("hidden");
+}
+
+function runPaletteItem(index) {
+    const item = paletteItems[index];
+    if (!item) return;
+    closeCommandPalette();
+    item.run();
+}
+
+function movePaletteSelection(delta) {
+    if (!paletteItems.length) return;
+    paletteSelectedIndex = (paletteSelectedIndex + delta + paletteItems.length) % paletteItems.length;
+    renderPaletteResults();
+    commandPaletteResults.querySelectorAll(".commandPaletteItem")[paletteSelectedIndex]
+        ?.scrollIntoView({ block: "nearest" });
+}
+
+commandPaletteInput.addEventListener("input", refreshPalette);
+commandPalette.addEventListener("click", (event) => {
+    if (event.target === commandPalette) closeCommandPalette();
+});
+commandPaletteInput.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") { event.preventDefault(); movePaletteSelection(1); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); movePaletteSelection(-1); }
+    else if (event.key === "Enter") { event.preventDefault(); runPaletteItem(paletteSelectedIndex); }
+    else if (event.key === "Escape") { event.preventDefault(); closeCommandPalette(); }
+});
+
+document.addEventListener("keydown", (event) => {
+    if (event.ctrlKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (commandPalette.classList.contains("hidden")) openCommandPalette();
+        else closeCommandPalette();
+    }
+});
 
 

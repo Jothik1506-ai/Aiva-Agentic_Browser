@@ -140,11 +140,16 @@ Aiva-Agentic_Browser/
 
 ## 🔧 Core Features (today)
 
-- 🤖 **Aiva Agentic Assistant** — page-aware Q&A plus model-driven navigation,
-  history controls, reload, and page reading.
+- 🤖 **Aiva Agentic Assistant** — page-aware Q&A plus a real tool-calling agent that
+  can navigate, read pages, **click elements, fill and submit forms**, scroll, and
+  manage tabs on your behalf, narrating each step with a Stop control.
+- ⌘ **Arc-style command palette** (`Ctrl K`) — fuzzy search across open tabs,
+  shortcuts, and browser commands, plus "Ask Aiva" to hand any query to the agent.
 - 🗂️ **Arc/Zen-style vertical sidebar** — Essentials, pinned tabs, real multi-webview
-  tabs, Personal/Work/Research spaces, resizing, fully hidden left-edge auto-reveal,
-  and local persistence.
+  tabs, colour-themed Personal/Work/Research spaces, drag-to-reorder, per-tab loading
+  spinners, resizing, fully hidden left-edge auto-reveal, and local persistence.
+- 🪟 **Custom frameless top bar** — sidebar toggle, back/forward/reload, centered
+  address bar, and native-feeling window controls.
 - ✅ **Opt-in Facial Fatigue Detection** — the camera and one-second analysis loop
   run only after the user starts Face Scanner and are fully released on Stop.
 - ✅ **Posture & Squat Tracking** — YOLOv8-pose powered exercise monitoring.
@@ -162,13 +167,33 @@ tools. Planned progression (smallest first):
 2. **Real browser tools (implemented)** — OpenAI tool-calling drives navigation,
    back/forward, reload, URL inspection, and page reading. Runs show action progress,
    stop after eight model steps, and can be cancelled by the user.
-3. **Page interaction** — chat can click elements and fill forms based on the
-   page's DOM.
-4. **Full autonomous agent** — richer planning, recovery, permissions, audit logs,
-   and reusable workflows across multiple pages.
+3. **Page interaction (implemented)** — `find_elements`, `click_element`,
+   `fill_input`, and `scroll_page` let the agent act on the page, plus
+   `open_tab` / `list_tabs` / `switch_tab` / `close_tab` for tab control.
+4. **Full autonomous agent (next)** — richer planning and recovery, an explicit
+   permission prompt before consequential actions, audit logs, and saved workflows.
+
+> ⚠️ The agent can act on real pages. Today it is bounded by a 14-step cap, a Stop
+> button, and prompt-level rules telling it not to enter credentials or payment
+> details or take irreversible actions — those rules are not yet enforced in code.
+> Keep an eye on it, and don't leave it logged into anything you can't afford it to
+> touch.
 
 See `.claude/CLAUDE.md` → "Agentic browser roadmap" for the concrete extension
 points (`/api/chat`, `renderer.js`'s chat handler, `preload.js`).
+
+---
+
+## ⌨️ Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl K` | Open the command palette |
+| `Ctrl T` | New tab |
+| `Ctrl W` | Close current tab |
+| `Ctrl L` | Focus the address bar |
+| `Ctrl Tab` / `Ctrl Shift Tab` | Cycle tabs |
+| `Ctrl 1`–`Ctrl 8` | Jump to tab by position (`Ctrl 9` = last tab) |
 
 ---
 

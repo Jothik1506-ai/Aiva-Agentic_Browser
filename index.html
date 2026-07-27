@@ -40,6 +40,7 @@
         <div class="topBarAddress">
             <span class="topBarAddressIcon">🔗</span>
             <input id="urlBar" type="text" placeholder="Search or enter URL" />
+            <kbd class="topBarKbdHint" title="Open command palette">Ctrl K</kbd>
             <button id="topBarTuneBtn" class="topBarAddressIconBtn" title="Page settings">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 6h9M17 6h3M4 18h3M11 18h9"/>
@@ -435,6 +436,19 @@
         <div class="contextMenuItem" id="ctxUnpinTab">Unpin Tab</div>
         <div class="contextMenuItem" id="ctxDuplicateTab">Duplicate Tab</div>
         <div class="contextMenuItem" id="ctxCloseTab">Close Tab</div>
+    </div>
+
+    <!-- ARC-STYLE COMMAND PALETTE -->
+    <div id="commandPalette" class="commandPalette hidden">
+        <div class="commandPaletteBox">
+            <div class="commandPaletteInputRow">
+                <span class="commandPaletteIcon">⌘</span>
+                <input id="commandPaletteInput" type="text" autocomplete="off" spellcheck="false"
+                    placeholder="Search tabs, open a site, or ask Aiva…" />
+                <kbd class="commandPaletteHint">Esc</kbd>
+            </div>
+            <div id="commandPaletteResults" class="commandPaletteResults"></div>
+        </div>
     </div>
 
     <!-- SCRIPTS -->
