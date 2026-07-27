@@ -15,6 +15,53 @@
     <div id="browserBackground" class="browserBackground"></div>
     <div class="backgroundOverlay"></div>
 
+    <!-- CUSTOM TOP BAR (replaces the native title bar) -->
+    <header id="topBar" class="topBar">
+        <div class="topBarSection topBarLeft">
+            <button id="topSidebarToggleBtn" class="topBarIconBtn" title="Toggle sidebar">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/>
+                    <path d="M9.5 4.5v15"/>
+                </svg>
+            </button>
+            <button id="backBtn" class="topBarIconBtn" title="Back">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg>
+            </button>
+            <button id="forwardBtn" class="topBarIconBtn" title="Forward">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg>
+            </button>
+            <button id="reloadBtn" class="topBarIconBtn" title="Reload">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 20v-6h6"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="topBarAddress">
+            <span class="topBarAddressIcon">🔗</span>
+            <input id="urlBar" type="text" placeholder="Search or enter URL" />
+            <button id="topBarTuneBtn" class="topBarAddressIconBtn" title="Page settings">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 6h9M17 6h3M4 18h3M11 18h9"/>
+                    <circle cx="15" cy="6" r="2.2"/>
+                    <circle cx="7" cy="18" r="2.2"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="topBarSection topBarRight">
+            <button id="winMinimizeBtn" class="topBarWindowBtn" title="Minimize">
+                <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="5.5" width="10" height="1.4" fill="currentColor"/></svg>
+            </button>
+            <button id="winMaximizeBtn" class="topBarWindowBtn" title="Maximize">
+                <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+            </button>
+            <button id="winCloseBtn" class="topBarWindowBtn topBarCloseBtn" title="Close">
+                <svg width="12" height="12" viewBox="0 0 12 12"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </button>
+        </div>
+    </header>
+
     <!-- ARC/ZEN-STYLE BROWSER SIDEBAR -->
     <aside id="browserSidebar" class="browserSidebar">
         <div class="sidebarResizeHandle" id="sidebarResizeHandle"></div>
@@ -23,18 +70,6 @@
                 <img src="assets/logo.jpg" alt="Logo" style="width: 24px; height: 24px; border-radius: 4px; object-fit: cover; margin-right: 4px;" />
                 <span class="brandName">Aiva</span>
             </button>
-            <button id="collapseSidebarBtn" class="sidebarIconBtn" title="Collapse sidebar">«</button>
-        </div>
-
-        <div class="sidebarNavControls">
-            <button id="backBtn" class="sidebarIconBtn" title="Back">‹</button>
-            <button id="forwardBtn" class="sidebarIconBtn" title="Forward">›</button>
-            <button id="reloadBtn" class="sidebarIconBtn" title="Reload">↻</button>
-        </div>
-
-        <div class="sidebarAddress">
-            <span class="searchIcon">⌕</span>
-            <input id="urlBar" type="text" placeholder="Search or enter URL" />
         </div>
 
         <div class="sidebarSection essentialsSection">
@@ -87,11 +122,39 @@
                 <button class="workspaceButton" data-workspace="research" title="Research">✦</button>
             </div>
             <div class="sidebarUtilityRow">
-                <button id="cameraBtn" class="sidebarIconBtn" title="Capture screenshot">▣</button>
-                <button id="downloadBtn" class="sidebarIconBtn" title="Downloads">⇩</button>
-                <button id="layersBtn" class="sidebarIconBtn" title="Extensions">◇</button>
-                <button id="customizeBtn" class="sidebarIconBtn" title="Customize wallpaper">◐</button>
-                <button id="menuBtn" class="sidebarIconBtn" title="Menu">•••</button>
+                <button id="cameraBtn" class="sidebarIconBtn" title="Capture screenshot">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 8h3l1.6-2.4a1.6 1.6 0 0 1 1.34-.6h4.12a1.6 1.6 0 0 1 1.34.6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/>
+                        <circle cx="12" cy="13.5" r="3.5"/>
+                    </svg>
+                </button>
+                <button id="downloadBtn" class="sidebarIconBtn" title="Downloads">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 3v11"/>
+                        <path d="m7.5 10 4.5 4.5 4.5-4.5"/>
+                        <path d="M4.5 17.5V19a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-1.5"/>
+                    </svg>
+                </button>
+                <button id="layersBtn" class="sidebarIconBtn" title="Extensions">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9.5 4.5a1.5 1.5 0 0 1 3 0V6h1.75A1.75 1.75 0 0 1 16 7.75V9.5h1.5a1.5 1.5 0 0 1 0 3H16v1.75A1.75 1.75 0 0 1 14.25 16H12.5v1.5a1.5 1.5 0 0 1-3 0V16H7.75A1.75 1.75 0 0 1 6 14.25V12.5H4.5a1.5 1.5 0 0 1 0-3H6V7.75A1.75 1.75 0 0 1 7.75 6H9.5Z"/>
+                    </svg>
+                </button>
+                <button id="customizeBtn" class="sidebarIconBtn" title="Customize wallpaper">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3.5" y="4.5" width="17" height="15" rx="2"/>
+                        <circle cx="9" cy="10" r="1.6"/>
+                        <path d="m4.5 16.5 4.5-4.5a1.5 1.5 0 0 1 2.12 0L15 15.75"/>
+                        <path d="m13.5 14 1.4-1.4a1.5 1.5 0 0 1 2.12 0l2.48 2.48"/>
+                    </svg>
+                </button>
+                <button id="menuBtn" class="sidebarIconBtn" title="Menu">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="5" cy="12" r="1.8"/>
+                        <circle cx="12" cy="12" r="1.8"/>
+                        <circle cx="19" cy="12" r="1.8"/>
+                    </svg>
+                </button>
             </div>
         </div>
     </aside>
@@ -153,35 +216,33 @@
             <!-- </div> -->
         </div>
 
-        <!-- RIGHT PANEL: Face Scanner -->
-        <div class="rightPanel">
-            <div class="card faceScannerCard">
-                <div class="cardHeaderCenter">
-                    <h3>Face Scanner</h3>
-                </div>
-
-                <div id="faceScanError" class="errorBannerSmall hidden">
-                    ✕ Connection Error: Cannot reach backend server.<br>Is it running?
-                </div>
-
-                <div class="videoWrapper">
-                    <div id="faceScannerIdle" class="faceScannerIdle">
-                        <span class="idleCameraIcon">◉</span>
-                        <strong>Camera is off</strong>
-                        <span>Start only when you want face analysis.</span>
-                    </div>
-                    <video id="selfieVideo" class="hidden" autoplay muted></video>
-                </div>
-
-                <div class="faceScanStatus">
-                    <span class="eyeIcon">👁</span> Face analysis is paused
-                </div>
-
-                <div class="analyzingLoader" id="authStatus">
-                    <span class="statusDot"></span> Scanner off
-                </div>
-                <button id="toggleFaceScannerBtn" class="faceScannerToggle" type="button">Start Face Scanner</button>
+        <!-- Face Scanner now lives in Settings (see #menuFaceScannerBtn) as a
+             toggle - this host keeps the actual video element mounted and
+             decoding in the background (not display:none) without taking up
+             dashboard space or showing its own card. -->
+        <div class="faceScannerHiddenHost card faceScannerCard">
+            <div id="faceScanError" class="errorBannerSmall hidden">
+                ✕ Connection Error: Cannot reach backend server.<br>Is it running?
             </div>
+            <div class="videoWrapper">
+                <div id="faceScannerIdle" class="faceScannerIdle">
+                    <span class="idleCameraIcon">◉</span>
+                    <strong>Camera is off</strong>
+                    <span>Start only when you want face analysis.</span>
+                </div>
+                <video id="selfieVideo" class="hidden" autoplay muted></video>
+            </div>
+            <div class="faceScanStatus">
+                <span class="eyeIcon">👁</span> Face analysis is paused
+            </div>
+            <div class="analyzingLoader" id="authStatus">
+                <span class="statusDot"></span> Scanner off
+            </div>
+            <button id="toggleFaceScannerBtn" class="faceScannerToggle" type="button">Start Face Scanner</button>
+        </div>
+
+        <!-- Wellness toasts (independent of the old right-panel layout) -->
+        <div class="wellnessToasts">
             <!-- Phone Usage Warning -->
             <div id="phoneWarning" class="phoneWarning hidden">
                 Warning: Phone usage detected. Consider using DND mode.
@@ -265,6 +326,19 @@
             </div>
             <div id="menuShortcutsGrid" class="menuShortcutsGrid">
                 <!-- Shortcuts will be dynamically inserted here -->
+            </div>
+
+            <div class="menuSettingsSection">
+                <div class="menuSectionLabel">Browser settings</div>
+                <button id="menuFaceScannerBtn" class="menuSettingsRow" type="button">
+                    <span class="menuSettingsIcon">◉</span>
+                    <span class="menuSettingsText">Face Scanner</span>
+                    <span id="menuFaceScannerState" class="menuSettingsState">Off</span>
+                </button>
+                <button id="menuHealthCareBtn" class="menuSettingsRow" type="button">
+                    <span class="menuSettingsIcon">🌿</span>
+                    <span class="menuSettingsText">Health and Care</span>
+                </button>
             </div>
         </div>
     </div>

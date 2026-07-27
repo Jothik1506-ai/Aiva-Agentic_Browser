@@ -27,6 +27,7 @@ function createWindow() {
         width: 1400,
         height: 900,
         backgroundColor: "#1f2a24",
+        frame: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: true,
@@ -36,6 +37,22 @@ function createWindow() {
     });
 
     win.loadFile("index.html");
+
+    // Custom top bar replaces the native title bar, so the renderer needs
+    // IPC hooks for the window controls it now draws itself, and needs to
+    // know the real maximize state to show the right icon.
+    ipcMain.on("window-minimize", () => win.minimize());
+    ipcMain.on("window-maximize-toggle", () => {
+        if (win.isMaximized()) win.unmaximize();
+        else win.maximize();
+    });
+    ipcMain.on("window-close", () => win.close());
+
+    const sendMaximizedState = () => {
+        if (!win.isDestroyed()) win.webContents.send("window-maximized-state", win.isMaximized());
+    };
+    win.on("maximize", sendMaximizedState);
+    win.on("unmaximize", sendMaximizedState);
 
     cursorPollInterval = setInterval(() => {
         if (win.isDestroyed() || win.webContents.isDestroyed()) return;

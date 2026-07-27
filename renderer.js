@@ -146,32 +146,44 @@ try {
     customShortcuts = [];
 }
 
+// Default shortcuts the user has removed - kept as a separate hide-list
+// rather than mutating the hardcoded defaultShortcuts array, since that
+// array is shared/reset-on-update rather than per-user state.
+let hiddenDefaultShortcuts = [];
+try {
+    const savedHidden = localStorage.getItem("hiddenDefaultShortcuts");
+    if (savedHidden) hiddenDefaultShortcuts = JSON.parse(savedHidden);
+    if (!Array.isArray(hiddenDefaultShortcuts)) hiddenDefaultShortcuts = [];
+} catch (e) {
+    console.error("Error loading hidden default shortcuts:", e);
+    hiddenDefaultShortcuts = [];
+}
+
 function renderShortcuts() {
     if (!quickAppsContainer) return;
     quickAppsContainer.innerHTML = "";
 
-    // Combine defaults and customs
-    // Choose shortcuts based on Focus Mode
-    let allShortcuts;
-    if (isFocusModeActive) {
-        allShortcuts = [...educationalShortcuts];
+    // Render defaults (removable, but via the hide-list rather than splicing
+    // the shared defaultShortcuts array) - skipped entirely in Focus Mode,
+    // which has its own fixed educational set.
+    if (!isFocusModeActive) {
+        defaultShortcuts
+            .filter((app) => !hiddenDefaultShortcuts.includes(app.name))
+            .forEach((app) => {
+                const appBtn = createShortcutElement(app, () => removeDefaultShortcut(app.name));
+                quickAppsContainer.appendChild(appBtn);
+            });
     } else {
-        allShortcuts = [...defaultShortcuts, ...customShortcuts];
+        educationalShortcuts.forEach(app => {
+            const appBtn = createShortcutElement(app, null);
+            quickAppsContainer.appendChild(appBtn);
+        });
     }
-
-    // Separate rendering for custom vs default to add remove logic only to custom
-
-    // Render defaults (no remove button)
-    const shortcutsToRender = isFocusModeActive ? educationalShortcuts : defaultShortcuts;
-    shortcutsToRender.forEach(app => {
-        const appBtn = createShortcutElement(app, false);
-        quickAppsContainer.appendChild(appBtn);
-    });
 
     // Render custom shortcuts (with remove button)
     if (!isFocusModeActive) {
         customShortcuts.forEach((app, index) => {
-            const appBtn = createShortcutElement(app, true, index);
+            const appBtn = createShortcutElement(app, () => removeShortcut(index));
             quickAppsContainer.appendChild(appBtn);
         });
     }
@@ -203,7 +215,7 @@ function renderShortcuts() {
 }
 
 
-function createShortcutElement(app, isCustom, index) {
+function createShortcutElement(app, onRemove) {
     const appBtn = document.createElement("div");
     appBtn.className = "appCircle";
     appBtn.title = app.name;
@@ -225,14 +237,14 @@ function createShortcutElement(app, isCustom, index) {
 
     appBtn.onclick = () => navigate(app.url);
 
-    if (isCustom) {
+    if (onRemove) {
         const removeBtn = document.createElement("div");
         removeBtn.className = "remoteShortcutBtn";
         removeBtn.innerHTML = "✕";
         removeBtn.title = "Remove shortcut";
         removeBtn.onclick = (e) => {
             e.stopPropagation(); // Prevent navigation
-            removeShortcut(index);
+            onRemove();
         };
         appBtn.appendChild(removeBtn);
     }
@@ -244,6 +256,14 @@ function removeShortcut(index) {
     if (confirm("Are you sure you want to remove this shortcut?")) {
         customShortcuts.splice(index, 1);
         localStorage.setItem("customShortcuts", JSON.stringify(customShortcuts));
+        renderShortcuts();
+    }
+}
+
+function removeDefaultShortcut(name) {
+    if (confirm("Are you sure you want to remove this shortcut?")) {
+        hiddenDefaultShortcuts.push(name);
+        localStorage.setItem("hiddenDefaultShortcuts", JSON.stringify(hiddenDefaultShortcuts));
         renderShortcuts();
     }
 }
@@ -483,12 +503,17 @@ function closeSidebarTab(tabId) {
     const index = sidebarTabs.findIndex((tab) => tab.id === tabId);
     if (index === -1) return;
 
+    const closedWorkspace = sidebarTabs[index].workspace;
+    const workspaceIndex = sidebarTabs
+        .filter((tab) => tab.workspace === closedWorkspace)
+        .findIndex((tab) => tab.id === tabId);
+
     const [closedTab] = sidebarTabs.splice(index, 1);
     closedTab.view.remove();
 
     if (activeSidebarTabId === tabId) {
         const workspaceTabs = sidebarTabs.filter((tab) => tab.workspace === activeSidebarWorkspace);
-        const replacement = workspaceTabs[Math.min(index, workspaceTabs.length - 1)] || workspaceTabs[0];
+        const replacement = workspaceTabs[Math.min(workspaceIndex, workspaceTabs.length - 1)] || workspaceTabs[0];
         if (replacement) {
             selectSidebarTab(replacement.id);
         } else {
@@ -727,14 +752,14 @@ function persistSidebarState() {
 }
 
 function initializeSidebar() {
-    const storedCollapsed = true;
-    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, "true");
+    const storedCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) !== "false";
     document.body.classList.toggle("sidebarCollapsed", storedCollapsed);
-    const collapseSidebarBtn = document.getElementById("collapseSidebarBtn");
+    const topSidebarToggleBtn = document.getElementById("topSidebarToggleBtn");
     const updateSidebarModeButton = (collapsed) => {
-        collapseSidebarBtn.textContent = collapsed ? "»" : "«";
-        collapseSidebarBtn.title = collapsed ? "Pin sidebar open" : "Use auto-hide sidebar";
-        collapseSidebarBtn.setAttribute("aria-label", collapseSidebarBtn.title);
+        if (!topSidebarToggleBtn) return;
+        topSidebarToggleBtn.classList.toggle("active", !collapsed);
+        topSidebarToggleBtn.title = collapsed ? "Pin sidebar open" : "Use auto-hide sidebar";
+        topSidebarToggleBtn.setAttribute("aria-label", topSidebarToggleBtn.title);
     };
     updateSidebarModeButton(storedCollapsed);
 
@@ -786,38 +811,48 @@ function initializeSidebar() {
         urlBar.focus();
     };
     document.getElementById("pinCurrentTabBtn").onclick = togglePinForActiveTab;
-    collapseSidebarBtn.onclick = () => {
-        const collapsed = document.body.classList.toggle("sidebarCollapsed");
-        if (!collapsed) document.body.classList.remove("sidebarHoverExpanded");
-        updateSidebarModeButton(collapsed);
-    };
 
     let hoverTimeout;
-    ipcRenderer.on("browser-cursor-position", (_event, position) => {
-        if (!document.body.classList.contains("sidebarCollapsed")) {
-            document.body.classList.remove("sidebarHoverExpanded");
-            return;
-        }
-        const expandedWidth = Number.parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue("--sidebar-expanded-width")
-        ) || 276;
-        const isExpanded = document.body.classList.contains("sidebarHoverExpanded");
-        
-        // Use a much narrower activation boundary if not expanded yet (e.g. 10px near the edge)
-        // If expanded, use the full expandedWidth + buffer
-        const activationBoundary = isExpanded ? expandedWidth + 20 : 15;
-        const insideWindow = position.y >= 0 && position.y <= position.height;
-        const shouldExpand = insideWindow && position.x >= 0 && position.x <= activationBoundary;
+    const toggleSidebarPinned = () => {
+        clearTimeout(hoverTimeout);
+        const collapsed = document.body.classList.toggle("sidebarCollapsed");
+        document.body.classList.remove("sidebarHoverExpanded");
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
+        updateSidebarModeButton(collapsed);
+    };
+    if (topSidebarToggleBtn) topSidebarToggleBtn.onclick = toggleSidebarPinned;
 
-        if (shouldExpand) {
+    // Reveal-from-hidden only needs the tiny edge trigger zone, checked against
+    // the OS-level cursor position (necessary because while fully hidden there
+    // is no DOM element sitting at that screen position to catch a native
+    // mouseenter). Once revealed, native mouseenter/mouseleave on the sidebar
+    // element itself (below) takes over -- far more reliable than re-deriving
+    // "is the cursor still over the panel" from raw window coordinates, which
+    // stayed true for any cursor position in that whole column, including over
+    // page content, and could leave the panel stuck open.
+    ipcRenderer.on("browser-cursor-position", (_event, position) => {
+        if (!document.body.classList.contains("sidebarCollapsed")) return;
+        if (document.body.classList.contains("sidebarHoverExpanded")) return;
+
+        const insideWindow = position.y >= 0 && position.y <= position.height;
+        if (insideWindow && position.x >= 0 && position.x <= 24) {
+            document.body.classList.add("sidebarHoverExpanded");
+        }
+    });
+
+    browserSidebar.addEventListener("mouseenter", () => {
+        if (document.body.classList.contains("sidebarCollapsed")) {
             clearTimeout(hoverTimeout);
             document.body.classList.add("sidebarHoverExpanded");
-        } else if (isExpanded) {
-            clearTimeout(hoverTimeout);
-            hoverTimeout = setTimeout(() => {
-                document.body.classList.remove("sidebarHoverExpanded");
-            }, 300); // 300ms delay before collapsing
         }
+    });
+
+    browserSidebar.addEventListener("mouseleave", () => {
+        if (!document.body.classList.contains("sidebarCollapsed")) return;
+        clearTimeout(hoverTimeout);
+        hoverTimeout = setTimeout(() => {
+            document.body.classList.remove("sidebarHoverExpanded");
+        }, 200); // short delay so a quick pass across the edge doesn't flicker
     });
 
     browserSidebar.addEventListener("focusin", () => {
@@ -829,7 +864,9 @@ function initializeSidebar() {
 
     const resizeHandle = document.getElementById("sidebarResizeHandle");
     resizeHandle.onpointerdown = (event) => {
-        if (document.body.classList.contains("sidebarCollapsed")) return;
+        const collapsed = document.body.classList.contains("sidebarCollapsed");
+        const hoverExpanded = document.body.classList.contains("sidebarHoverExpanded");
+        if (collapsed && !hoverExpanded) return; // sidebar isn't visible, nothing to resize
         event.preventDefault();
         resizeHandle.setPointerCapture(event.pointerId);
         document.body.classList.add("is-resizing");
@@ -853,6 +890,11 @@ function initializeSidebar() {
         document.body.classList.remove("is-resizing");
     };
 
+    function getOrderedWorkspaceTabs() {
+        const workspaceTabs = sidebarTabs.filter((tab) => tab.workspace === activeSidebarWorkspace);
+        return [...workspaceTabs.filter((tab) => tab.pinned), ...workspaceTabs.filter((tab) => !tab.pinned)];
+    }
+
     document.addEventListener("keydown", (event) => {
         if (event.ctrlKey && event.key.toLowerCase() === "t") {
             event.preventDefault();
@@ -862,6 +904,26 @@ function initializeSidebar() {
         if (event.ctrlKey && event.key.toLowerCase() === "w") {
             event.preventDefault();
             closeSidebarTab(activeSidebarTabId);
+        }
+        if (event.ctrlKey && event.key.toLowerCase() === "l") {
+            event.preventDefault();
+            urlBar.focus();
+            urlBar.select();
+        }
+        if (event.ctrlKey && event.key === "Tab") {
+            event.preventDefault();
+            const ordered = getOrderedWorkspaceTabs();
+            if (ordered.length < 2) return;
+            const currentIndex = ordered.findIndex((tab) => tab.id === activeSidebarTabId);
+            const step = event.shiftKey ? -1 : 1;
+            const nextIndex = (currentIndex + step + ordered.length) % ordered.length;
+            selectSidebarTab(ordered[nextIndex].id);
+        }
+        if (event.ctrlKey && /^[1-9]$/.test(event.key)) {
+            event.preventDefault();
+            const ordered = getOrderedWorkspaceTabs();
+            const targetIndex = event.key === "9" ? ordered.length - 1 : Number(event.key) - 1;
+            if (ordered[targetIndex]) selectSidebarTab(ordered[targetIndex].id);
         }
     });
 
@@ -956,6 +1018,16 @@ document.getElementById("homeBtn").onclick = showHome;
 // Extra Buttons (Placeholders)
 // Extra Buttons (Placeholders)
 const { ipcRenderer } = require('electron');
+
+// Custom top-bar window controls (the window is frameless - see main.js).
+const winMaximizeBtn = document.getElementById("winMaximizeBtn");
+document.getElementById("winMinimizeBtn").onclick = () => ipcRenderer.send("window-minimize");
+winMaximizeBtn.onclick = () => ipcRenderer.send("window-maximize-toggle");
+document.getElementById("winCloseBtn").onclick = () => ipcRenderer.send("window-close");
+ipcRenderer.on("window-maximized-state", (_event, isMaximized) => {
+    winMaximizeBtn.classList.toggle("is-maximized", isMaximized);
+    winMaximizeBtn.title = isMaximized ? "Restore" : "Maximize";
+});
 
 document.getElementById("cameraBtn").onclick = () => {
     logStatus("Capturing screenshot...");
@@ -1152,7 +1224,7 @@ async function fetchData() {
         fetch(`${BACKEND_URL}/weather`)
             .then(r => r.json())
             .then(data => {
-                weatherDataEl.innerHTML = `
+                if (weatherDataEl) weatherDataEl.innerHTML = `
                     <div style="font-size:24px">${data.temp}</div>
                     <div>${data.condition}</div>
                 `;
@@ -1171,11 +1243,11 @@ async function fetchData() {
         fetch(`${BACKEND_URL}/news`)
             .then(r => r.json())
             .then(data => {
-                newsDataEl.innerHTML = data.map(n => `<div style="margin-bottom:5px; font-size:12px"><b>${n.source}</b>: ${n.title}</div>`).join("");
+                if (newsDataEl) newsDataEl.innerHTML = data.map(n => `<div style="margin-bottom:5px; font-size:12px"><b>${n.source}</b>: ${n.title}</div>`).join("");
             });
 
         // Stocks (Mock)
-        stocksDataEl.innerHTML = `
+        if (stocksDataEl) stocksDataEl.innerHTML = `
             <div style="color:#0f0">NVDA: $1483.50 (+2.5%)</div>
         `;
 
@@ -1329,6 +1401,32 @@ let faceScannerActive = false;
 let faceFrameInFlight = false;
 let faceAnalysisController = null;
 
+const menuFaceScannerBtn = document.getElementById("menuFaceScannerBtn");
+const menuFaceScannerState = document.getElementById("menuFaceScannerState");
+
+function setMenuFaceScannerState(active) {
+    if (!menuFaceScannerBtn) return;
+    menuFaceScannerBtn.classList.toggle("active", active);
+    if (menuFaceScannerState) menuFaceScannerState.textContent = active ? "On" : "Off";
+}
+
+if (menuFaceScannerBtn) {
+    menuFaceScannerBtn.onclick = () => {
+        if (faceScannerActive) stopFaceScanner();
+        else startFaceScanner();
+        menuPanel.classList.add("hidden");
+    };
+}
+
+const menuHealthCareBtn = document.getElementById("menuHealthCareBtn");
+if (menuHealthCareBtn) {
+    menuHealthCareBtn.onclick = () => {
+        menuPanel.classList.add("hidden");
+        const healthModal = document.getElementById("healthCareModal");
+        if (healthModal) healthModal.classList.remove("hidden");
+    };
+}
+
 async function startFaceScanner() {
     if (faceScannerActive || faceScannerStream) return;
     toggleFaceScannerBtn.disabled = true;
@@ -1347,6 +1445,7 @@ async function startFaceScanner() {
         faceScannerIdle.classList.add("hidden");
         toggleFaceScannerBtn.textContent = "Stop Face Scanner";
         toggleFaceScannerBtn.classList.add("active");
+        setMenuFaceScannerState(true);
         authStatus.innerHTML = '<span class="statusDot on"></span> Scanner active';
         faceScanStatus.innerHTML = '<span class="eyeIcon">👁</span> Analyzing facial expressions';
         faceScanStatus.style.color = "";
@@ -1388,6 +1487,7 @@ function stopFaceScanner() {
     faceScannerIdle.classList.remove("hidden");
     toggleFaceScannerBtn.textContent = "Start Face Scanner";
     toggleFaceScannerBtn.classList.remove("active");
+    setMenuFaceScannerState(false);
     authStatus.innerHTML = '<span class="statusDot"></span> Scanner off';
     faceScanStatus.innerHTML = '<span class="eyeIcon">👁</span> Face analysis is paused';
     faceScanStatus.style.color = "";
@@ -1613,46 +1713,51 @@ async function attachCurrentPageContext(requestBody) {
 }
 
 async function executeBrowserTool(name, args = {}) {
-    switch (name) {
-        case "navigate":
-            return await navigate(args.target);
-        case "read_page": {
-            const content = await getPageContent();
-            if (content === null) {
-                return { success: false, error: "The current page could not be read." };
+    try {
+        switch (name) {
+            case "navigate":
+                return await navigate(args.target);
+            case "read_page": {
+                const content = await getPageContent();
+                if (content === null) {
+                    return { success: false, error: "The current page could not be read." };
+                }
+                return {
+                    success: true,
+                    url: webview.getURL(),
+                    content: content.slice(0, 8000),
+                    truncated: content.length > 8000
+                };
             }
-            return {
-                success: true,
-                url: webview.getURL(),
-                content: content.slice(0, 8000),
-                truncated: content.length > 8000
-            };
-        }
-        case "get_current_url":
-            return { success: true, url: webview.getURL() || "about:blank" };
-        case "go_back": {
-            if (!webview.canGoBack()) {
-                return { success: false, error: "There is no previous page in browser history." };
+            case "get_current_url":
+                return { success: true, url: webview.getURL() || "about:blank" };
+            case "go_back": {
+                if (!webview.canGoBack()) {
+                    return { success: false, error: "There is no previous page in browser history." };
+                }
+                const loadResult = waitForWebviewLoad();
+                webview.goBack();
+                return await loadResult;
             }
-            const loadResult = waitForWebviewLoad();
-            webview.goBack();
-            return await loadResult;
-        }
-        case "go_forward": {
-            if (!webview.canGoForward()) {
-                return { success: false, error: "There is no next page in browser history." };
+            case "go_forward": {
+                if (!webview.canGoForward()) {
+                    return { success: false, error: "There is no next page in browser history." };
+                }
+                const loadResult = waitForWebviewLoad();
+                webview.goForward();
+                return await loadResult;
             }
-            const loadResult = waitForWebviewLoad();
-            webview.goForward();
-            return await loadResult;
+            case "reload_page": {
+                const loadResult = waitForWebviewLoad();
+                webview.reload();
+                return await loadResult;
+            }
+            default:
+                return { success: false, error: `Unsupported browser tool: ${name}` };
         }
-        case "reload_page": {
-            const loadResult = waitForWebviewLoad();
-            webview.reload();
-            return await loadResult;
-        }
-        default:
-            return { success: false, error: `Unsupported browser tool: ${name}` };
+    } catch (error) {
+        console.error(`Browser tool "${name}" failed:`, error);
+        return { success: false, error: error.message || `The "${name}" action failed unexpectedly.` };
     }
 }
 
@@ -1719,7 +1824,9 @@ async function sendMessage() {
             usingPageContext = (await attachCurrentPageContext(requestBody)) || usingPageContext;
         }
 
-        addMessage(`I stopped after ${MAX_AGENT_STEPS} steps to avoid an accidental loop.`, false, usingPageContext);
+        const actionsSoFar = requestBody.tool_history.map((exchange) => describeToolCall(exchange)).join(", ");
+        const recap = actionsSoFar ? ` So far I: ${actionsSoFar}.` : "";
+        addMessage(`I stopped after ${MAX_AGENT_STEPS} steps to avoid an accidental loop.${recap}`, false, usingPageContext);
 
     } catch (error) {
         if (error.name === "AbortError" || agentRunCancelled) {

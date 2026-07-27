@@ -539,6 +539,10 @@ BROWSER_TOOLS = [
     }
 ]
 
+BROWSER_TOOL_NAMES = {tool["function"]["name"] for tool in BROWSER_TOOLS}
+MAX_TOOL_HISTORY = 20
+MAX_TOOL_RESULT_CHARS = 8000
+
 
 @app.post("/api/chat")
 def chat_with_ai(req: ChatRequest):
@@ -584,7 +588,9 @@ def chat_with_ai(req: ChatRequest):
             })
         messages.append({'role': 'user', 'content': message})
 
-        for exchange in req.tool_history:
+        for exchange in req.tool_history[:MAX_TOOL_HISTORY]:
+            if exchange.name not in BROWSER_TOOL_NAMES:
+                continue
             messages.append({
                 'role': 'assistant',
                 'content': None,
@@ -600,7 +606,7 @@ def chat_with_ai(req: ChatRequest):
             messages.append({
                 'role': 'tool',
                 'tool_call_id': exchange.tool_call_id,
-                'content': exchange.result
+                'content': exchange.result[:MAX_TOOL_RESULT_CHARS]
             })
         
         # Generate Response

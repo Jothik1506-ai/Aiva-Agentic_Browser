@@ -13,6 +13,7 @@
   --border-color: rgba(255, 255, 255, 0.08);
   --sidebar-width: 276px;
   --sidebar-expanded-width: 276px;
+  --top-bar-height: 44px;
 }
 
 body,
@@ -50,10 +51,139 @@ html {
   z-index: 2;
 }
 
+/* CUSTOM TOP BAR (replaces the native OS title bar) */
+.topBar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: var(--top-bar-height);
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  background: linear-gradient(180deg, rgba(45, 58, 51, 0.98), rgba(31, 42, 36, 0.98));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.topBarSection {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.topBarLeft {
+  flex: 0 0 auto;
+}
+
+.topBarRight {
+  flex: 0 0 auto;
+  margin-left: auto;
+  gap: 2px;
+}
+
+.topBarIconBtn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-text);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+}
+
+.topBarIconBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-color);
+}
+
+.topBarIconBtn.active {
+  background: rgba(127, 200, 169, 0.18);
+  color: var(--accent-color);
+}
+
+.topBarAddress {
+  flex: 1;
+  max-width: 640px;
+  margin: 0 auto;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.22);
+  -webkit-app-region: no-drag;
+}
+
+.topBarAddressIcon {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.topBarAddress #urlBar {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-color);
+  font-size: 13px;
+  text-align: center;
+}
+
+.topBarAddressIconBtn {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-text);
+  cursor: pointer;
+}
+
+.topBarAddressIconBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-color);
+}
+
+.topBarWindowBtn {
+  width: 34px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-text);
+  cursor: pointer;
+}
+
+.topBarWindowBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-color);
+}
+
+.topBarCloseBtn:hover {
+  background: #e5484d;
+  color: #fff;
+}
+
 /* ARC/ZEN-STYLE SIDEBAR */
 .browserSidebar {
   position: fixed;
-  inset: 0 auto 0 0;
+  inset: var(--top-bar-height) auto 0 0;
   z-index: 2200;
   width: var(--sidebar-width);
   box-sizing: border-box;
@@ -392,50 +522,22 @@ body.is-resizing .webview, body.is-resizing iframe {
   justify-content: space-between;
 }
 
+/* Auto-hide mode: the sidebar is fully off-canvas (invisible, no reserved
+   layout space) until the cursor hovers the trigger zone at the screen edge,
+   at which point it slides in as a floating overlay above the page content
+   -- it never pushes/resizes the page while in this mode, matching Arc. */
 body.sidebarCollapsed {
-  --sidebar-width: 68px;
+  --sidebar-width: 0px;
 }
 
 body.sidebarCollapsed .browserSidebar {
-  width: var(--sidebar-width);
-  transform: translateX(0);
-}
-
-body.sidebarCollapsed.sidebarHoverExpanded {
-  --sidebar-width: var(--sidebar-expanded-width);
+  width: var(--sidebar-expanded-width);
+  transform: translateX(-100%);
 }
 
 body.sidebarCollapsed.sidebarHoverExpanded .browserSidebar {
-  width: var(--sidebar-expanded-width);
+  transform: translateX(0);
   box-shadow: 18px 0 42px rgba(0, 0, 0, 0.42);
-}
-
-/* Hide text elements in collapsed state */
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .brandName,
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarTabLabel,
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .workspaceEyebrow,
-body.sidebarCollapsed:not(.sidebarHoverExpanded) #activeWorkspaceName,
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarSectionHeader,
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarEmptyState,
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarAddress,
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarFavorites,
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarNavControls,
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarTabClose {
-    display: none !important;
-}
-
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarHeader,
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .workspaceSwitcher,
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarUtilityRow {
-    flex-direction: column;
-    gap: 12px;
-    justify-content: center;
-    align-items: center;
-}
-
-body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarTabItem {
-    justify-content: center;
-    padding: 8px 0;
 }
 
 /* Drag and Drop Visuals */
@@ -490,10 +592,10 @@ body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarTabItem {
 /* WEBVIEW WRAPPER */
 .webWrap {
   position: fixed;
-  top: 0;
+  top: var(--top-bar-height);
   left: var(--sidebar-width);
   width: calc(100vw - var(--sidebar-width));
-  height: 100vh;
+  height: calc(100vh - var(--top-bar-height));
   display: flex;
   flex-direction: column;
   background: #fff;
@@ -513,11 +615,12 @@ body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarTabItem {
   position: relative;
   z-index: 10;
   display: grid;
-  grid-template-columns: 1fr 350px;
+  grid-template-columns: 1fr;
   grid-template-rows: 100%;
-  height: 100vh;
+  height: calc(100vh - var(--top-bar-height));
   width: calc(100vw - var(--sidebar-width));
   margin-left: var(--sidebar-width);
+  margin-top: var(--top-bar-height);
   padding: 15px;
   box-sizing: border-box;
   gap: 15px;
@@ -1052,6 +1155,64 @@ body.sidebarCollapsed:not(.sidebarHoverExpanded) .sidebarTabItem {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.menuSettingsSection {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.menuSectionLabel {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 0 4px 2px;
+}
+
+.menuSettingsRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-color);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.menuSettingsRow:hover {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+.menuSettingsIcon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.menuSettingsText {
+  flex: 1;
+}
+
+.menuSettingsState {
+  color: var(--muted-text);
+  font-size: 11px;
+}
+
+.menuSettingsRow.active .menuSettingsState {
+  color: var(--accent-color);
+}
+
 .menuShortcut:hover {
   background: var(--card-bg);
   border-color: rgba(255, 255, 255, 0.2);
@@ -1280,18 +1441,30 @@ body.focusModeActive #customizeBtn {
 }
 
 /* RIGHT PANEL */
-.rightPanel {
+.wellnessToasts {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1500;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 10px;
+  width: 300px;
 }
 
-.faceScannerCard {
-  text-align: center;
-  align-items: center;
-  background: var(--bg-color);
-  border: 1px solid var(--border-color);
-  padding: 20px;
+/* Keeps the video element mounted and actively decoding (needed for the
+   fatigue-analysis frame capture to keep working) while taking the card
+   fully out of the dashboard's visual layout - the Settings menu's Face
+   Scanner toggle (#menuFaceScannerBtn) is the only visible control now. */
+.faceScannerHiddenHost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .cardHeaderCenter h3 {
@@ -1437,8 +1610,8 @@ body.focusModeActive #customizeBtn {
 /* AI CHAT PANEL STYLES */
 .aiChatPanel {
   position: fixed;
-  left: calc(var(--sidebar-width) + 18px);
-  bottom: 72px;
+  right: 25px;
+  bottom: 78px;
   width: 380px;
   max-height: 600px;
   /* Use max-height so it doesn't overflow screen */
@@ -1675,8 +1848,8 @@ body.focusModeActive #customizeBtn {
 /* Floating AI Chat Trigger Styling */
 #aiChatBtn {
   position: fixed;
-  left: calc(var(--sidebar-width) + 18px);
-  bottom: 20px;
+  right: 25px;
+  bottom: 25px;
   width: 45px;
   height: 45px;
   background: var(--bg-color);
