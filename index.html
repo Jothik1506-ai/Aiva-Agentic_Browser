@@ -20,7 +20,7 @@
         <div class="sidebarResizeHandle" id="sidebarResizeHandle"></div>
         <div class="sidebarHeader">
             <button id="homeBtn" class="brandButton" title="Aiva home">
-                <span class="brandMark">A</span>
+                <img src="assets/logo.jpg" alt="Logo" style="width: 24px; height: 24px; border-radius: 4px; object-fit: cover; margin-right: 4px;" />
                 <span class="brandName">Aiva</span>
             </button>
             <button id="collapseSidebarBtn" class="sidebarIconBtn" title="Collapse sidebar">«</button>
@@ -355,7 +355,15 @@
             </div>
         </div>
     </div>
+    <!-- CUSTOM CONTEXT MENU -->
+    <div id="customContextMenu" class="customContextMenu">
+        <div class="contextMenuItem" id="ctxPinTab">Pin Tab</div>
+        <div class="contextMenuItem" id="ctxUnpinTab">Unpin Tab</div>
+        <div class="contextMenuItem" id="ctxDuplicateTab">Duplicate Tab</div>
+        <div class="contextMenuItem" id="ctxCloseTab">Close Tab</div>
+    </div>
 
+    <!-- SCRIPTS -->
     <script src="renderer.js"></script>
 </body>
 

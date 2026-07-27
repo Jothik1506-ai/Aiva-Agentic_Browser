@@ -76,9 +76,9 @@ NEWS_DATA = [
 
 
 # --- YOLOv8 Setup ---
-from ultralytics import YOLO
-model = YOLO('yolov8n-pose.pt')
-object_model = YOLO('yolov8n.pt') # Load object detection model
+# from ultralytics import YOLO
+# model = YOLO('yolov8n-pose.pt')
+# object_model = YOLO('yolov8n.pt') # Load object detection model
 
 # Global State
 squat_count = 0
@@ -252,15 +252,15 @@ def analyze_face(req: ImageRequest = Body(...)):
         # Check for Phone (Object Detection)
         using_phone = False
         # Lower confidence to 0.4 to catch partial phones
-        obj_results = object_model(frame, verbose=False, conf=0.4)
-        if obj_results:
-            for box in obj_results[0].boxes:
-                cls_id = int(box.cls[0])
-                # COCO Class 67 is 'cell phone'
-                if cls_id == 67:
-                    using_phone = True
-                    # print("DEBUG: Phone detected!") 
-                    break
+        # obj_results = object_model(frame, verbose=False, conf=0.4)
+        # if obj_results:
+        #     for box in obj_results[0].boxes:
+        #         cls_id = int(box.cls[0])
+        #         # COCO Class 67 is 'cell phone'
+        #         if cls_id == 67:
+        #             using_phone = True
+        #             # print("DEBUG: Phone detected!") 
+        #             break
 
         state = "Focused"
         details = "Normal baseline"
@@ -396,25 +396,25 @@ def process_exercise(req: ImageRequest = Body(...)):
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
         # Process with YOLO
-        results = model(frame, verbose=False)
+        # results = model(frame, verbose=False)
         
         # YOLO COCO Keypoints: 11=Left Hip, 13=Left Knee
-        if results and results[0].keypoints is not None and results[0].keypoints.xy.shape[1] >= 14:
-            keypoints = results[0].keypoints.xy.cpu().numpy()[0] # Taking first person
-            
-            left_hip = keypoints[11]
-            left_knee = keypoints[13]
-            
-            # Check if detected (not 0,0)
-            if np.sum(left_hip) > 0 and np.sum(left_knee) > 0:
-                # Hip Y > Knee Y - offset -> Squatting (Down)
-                if left_hip[1] > (left_knee[1] - 50): 
-                     if current_stage != "down":
-                        current_stage = "down"
-                
-                if left_hip[1] < (left_knee[1] - 100) and current_stage == 'down':
-                     current_stage = "up"
-                     squat_count += 1
+        # if results and results[0].keypoints is not None and results[0].keypoints.xy.shape[1] >= 14:
+        #     keypoints = results[0].keypoints.xy.cpu().numpy()[0] # Taking first person
+        #     
+        #     left_hip = keypoints[11]
+        #     left_knee = keypoints[13]
+        #     
+        #     # Check if detected (not 0,0)
+        #     if np.sum(left_hip) > 0 and np.sum(left_knee) > 0:
+        #         # Hip Y > Knee Y - offset -> Squatting (Down)
+        #         if left_hip[1] > (left_knee[1] - 50): 
+        #              if current_stage != "down":
+        #                 current_stage = "down"
+        #         
+        #         if left_hip[1] < (left_knee[1] - 100) and current_stage == 'down':
+        #              current_stage = "up"
+        #              squat_count += 1
 
         return {
             "count": squat_count, 

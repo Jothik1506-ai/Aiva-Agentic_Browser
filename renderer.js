@@ -531,16 +531,137 @@ function switchSidebarWorkspace(workspace) {
     else createSidebarTab("about:blank", { workspace, activate: true });
 }
 
+let currentContextTabId = null;
+const ctxMenu = document.getElementById("customContextMenu");
+
+document.addEventListener("click", () => {
+    if (ctxMenu) ctxMenu.classList.remove("show");
+});
+
+if (ctxMenu) {
+    document.getElementById("ctxPinTab").onclick = () => {
+        const tab = getSidebarTab(currentContextTabId);
+        if (tab) { tab.pinned = true; persistSidebarState(); renderSidebarTabs(); }
+    };
+    document.getElementById("ctxUnpinTab").onclick = () => {
+        const tab = getSidebarTab(currentContextTabId);
+        if (tab) { tab.pinned = false; persistSidebarState(); renderSidebarTabs(); }
+    };
+    document.getElementById("ctxDuplicateTab").onclick = () => {
+        const tab = getSidebarTab(currentContextTabId);
+        if (tab) createSidebarTab(tab.url, { activate: true, workspace: tab.workspace });
+    };
+    document.getElementById("ctxCloseTab").onclick = () => {
+        closeSidebarTab(currentContextTabId);
+    };
+}
+
+function getDragAfterElement(container, y) {
+    const draggableElements = [...container.querySelectorAll('.sidebarTabItem:not(.dragging)')];
+    return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) {
+            return { offset: offset, element: child };
+        } else {
+            return closest;
+        }
+    }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+function setupDragAndDrop(container, isPinnedTarget) {
+    container.ondragover = (e) => {
+        e.preventDefault();
+        const draggable = document.querySelector(".dragging");
+        if (!draggable) return;
+        
+        const afterElement = getDragAfterElement(container, e.clientY);
+        container.querySelectorAll(".sidebarTabItem").forEach(item => {
+            item.classList.remove("drag-over", "drag-over-bottom");
+        });
+
+        if (afterElement) {
+            afterElement.classList.add("drag-over");
+        } else {
+            const lastChild = container.lastElementChild;
+            if(lastChild && lastChild.classList.contains("sidebarTabItem")) {
+                lastChild.classList.add("drag-over-bottom");
+            }
+        }
+    };
+
+    container.ondragleave = () => {
+        container.querySelectorAll(".sidebarTabItem").forEach(item => {
+            item.classList.remove("drag-over", "drag-over-bottom");
+        });
+    };
+
+    container.ondrop = (e) => {
+        e.preventDefault();
+        container.querySelectorAll(".sidebarTabItem").forEach(item => {
+            item.classList.remove("drag-over", "drag-over-bottom");
+        });
+
+        const tabId = e.dataTransfer.getData("text/plain");
+        const draggedTab = getSidebarTab(tabId);
+        if (!draggedTab) return;
+
+        draggedTab.pinned = isPinnedTarget;
+        const afterElement = getDragAfterElement(container, e.clientY);
+        
+        if (afterElement) {
+            container.insertBefore(document.querySelector(".dragging"), afterElement);
+        } else {
+            container.appendChild(document.querySelector(".dragging"));
+        }
+
+        const workspaceTabs = sidebarTabs.filter(t => t.workspace === activeSidebarWorkspace);
+        const otherTabs = sidebarTabs.filter(t => t.workspace !== activeSidebarWorkspace);
+        
+        const newWorkspaceOrder = [];
+        sidebarPinnedList.querySelectorAll(".sidebarTabItem").forEach(el => {
+            const t = workspaceTabs.find(t => t.id === el.dataset.tabId);
+            if(t) newWorkspaceOrder.push(t);
+        });
+        sidebarTabsList.querySelectorAll(".sidebarTabItem").forEach(el => {
+            const t = workspaceTabs.find(t => t.id === el.dataset.tabId);
+            if(t) newWorkspaceOrder.push(t);
+        });
+
+        sidebarTabs.length = 0;
+        sidebarTabs.push(...otherTabs, ...newWorkspaceOrder);
+
+        persistSidebarState();
+        renderSidebarTabs();
+    };
+}
+
 function createSidebarTabItem(tab) {
     const item = document.createElement("div");
     item.className = `sidebarTabItem${tab.id === activeSidebarTabId ? " active" : ""}`;
     item.title = tab.title;
+    item.dataset.tabId = tab.id;
+    item.draggable = true;
+
     item.onclick = () => selectSidebarTab(tab.id);
     item.oncontextmenu = (event) => {
         event.preventDefault();
-        tab.pinned = !tab.pinned;
-        persistSidebarState();
-        renderSidebarTabs();
+        currentContextTabId = tab.id;
+        if(ctxMenu) {
+            ctxMenu.style.left = `${event.clientX}px`;
+            ctxMenu.style.top = `${event.clientY}px`;
+            ctxMenu.classList.add("show");
+            document.getElementById("ctxPinTab").style.display = tab.pinned ? "none" : "block";
+            document.getElementById("ctxUnpinTab").style.display = tab.pinned ? "block" : "none";
+        }
+    };
+
+    item.ondragstart = (e) => {
+        e.dataTransfer.setData("text/plain", tab.id);
+        item.classList.add("dragging");
+    };
+    item.ondragend = () => {
+        item.classList.remove("dragging");
     };
 
     const favicon = document.createElement("img");
@@ -586,6 +707,9 @@ function renderSidebarTabs() {
     const workspaceTabs = sidebarTabs.filter((tab) => tab.workspace === activeSidebarWorkspace);
     renderSidebarTabList(sidebarPinnedList, workspaceTabs.filter((tab) => tab.pinned), "Pin a tab to keep it here");
     renderSidebarTabList(sidebarTabsList, workspaceTabs.filter((tab) => !tab.pinned), "No open tabs");
+
+    setupDragAndDrop(sidebarPinnedList, true);
+    setupDragAndDrop(sidebarTabsList, false);
 
     activeWorkspaceName.textContent = SIDEBAR_WORKSPACES[activeSidebarWorkspace];
     document.querySelectorAll(".workspaceButton").forEach((button) => {
@@ -668,6 +792,7 @@ function initializeSidebar() {
         updateSidebarModeButton(collapsed);
     };
 
+    let hoverTimeout;
     ipcRenderer.on("browser-cursor-position", (_event, position) => {
         if (!document.body.classList.contains("sidebarCollapsed")) {
             document.body.classList.remove("sidebarHoverExpanded");
@@ -677,15 +802,27 @@ function initializeSidebar() {
             getComputedStyle(document.documentElement).getPropertyValue("--sidebar-expanded-width")
         ) || 276;
         const isExpanded = document.body.classList.contains("sidebarHoverExpanded");
-        const activationBoundary = isExpanded ? expandedWidth + 12 : 16;
+        
+        // Use a much narrower activation boundary if not expanded yet (e.g. 10px near the edge)
+        // If expanded, use the full expandedWidth + buffer
+        const activationBoundary = isExpanded ? expandedWidth + 20 : 15;
         const insideWindow = position.y >= 0 && position.y <= position.height;
-        document.body.classList.toggle(
-            "sidebarHoverExpanded",
-            insideWindow && position.x >= 0 && position.x <= activationBoundary
-        );
+        const shouldExpand = insideWindow && position.x >= 0 && position.x <= activationBoundary;
+
+        if (shouldExpand) {
+            clearTimeout(hoverTimeout);
+            document.body.classList.add("sidebarHoverExpanded");
+        } else if (isExpanded) {
+            clearTimeout(hoverTimeout);
+            hoverTimeout = setTimeout(() => {
+                document.body.classList.remove("sidebarHoverExpanded");
+            }, 300); // 300ms delay before collapsing
+        }
     });
+
     browserSidebar.addEventListener("focusin", () => {
         if (document.body.classList.contains("sidebarCollapsed")) {
+            clearTimeout(hoverTimeout);
             document.body.classList.add("sidebarHoverExpanded");
         }
     });
@@ -693,19 +830,27 @@ function initializeSidebar() {
     const resizeHandle = document.getElementById("sidebarResizeHandle");
     resizeHandle.onpointerdown = (event) => {
         if (document.body.classList.contains("sidebarCollapsed")) return;
+        event.preventDefault();
         resizeHandle.setPointerCapture(event.pointerId);
+        document.body.classList.add("is-resizing");
     };
+    let resizeAnimationFrame;
     resizeHandle.onpointermove = (event) => {
         if (!resizeHandle.hasPointerCapture(event.pointerId)) return;
-        const width = Math.min(420, Math.max(220, event.clientX));
-        document.documentElement.style.setProperty("--sidebar-width", `${width}px`);
-        document.documentElement.style.setProperty("--sidebar-expanded-width", `${width}px`);
-        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+        if (resizeAnimationFrame) cancelAnimationFrame(resizeAnimationFrame);
+        
+        resizeAnimationFrame = requestAnimationFrame(() => {
+            const width = Math.min(420, Math.max(220, event.clientX));
+            document.documentElement.style.setProperty("--sidebar-width", `${width}px`);
+            document.documentElement.style.setProperty("--sidebar-expanded-width", `${width}px`);
+            localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+        });
     };
     resizeHandle.onpointerup = (event) => {
         if (resizeHandle.hasPointerCapture(event.pointerId)) {
             resizeHandle.releasePointerCapture(event.pointerId);
         }
+        document.body.classList.remove("is-resizing");
     };
 
     document.addEventListener("keydown", (event) => {
