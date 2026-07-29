@@ -847,7 +847,9 @@ function setupDragAndDrop(container, isPinnedTarget) {
         sidebarTabs.push(...otherTabs, ...newWorkspaceOrder);
 
         persistSidebarState();
-        renderSidebarTabs();
+        // Forced: dragging moved DOM nodes directly, so even a drop that leaves
+        // the order unchanged needs the list rebuilt from state to resync.
+        renderSidebarTabs({ force: true });
     };
 }
 
@@ -927,8 +929,22 @@ function renderSidebarTabList(container, tabs, emptyLabel) {
     tabs.forEach((tab) => container.appendChild(createSidebarTabItem(tab)));
 }
 
-function renderSidebarTabs() {
+let lastTabRenderSignature = "";
+
+// Webview events (load start/stop, navigate, title, favicon) fire in bursts,
+// and each one used to rebuild every tab row and re-bind drag handlers. That
+// churn is what made the sidebar feel janky during page loads, so skip the
+// rebuild unless something the user can actually see changed.
+function renderSidebarTabs({ force = false } = {}) {
     const workspaceTabs = sidebarTabs.filter((tab) => tab.workspace === activeSidebarWorkspace);
+    const signature = JSON.stringify([
+        activeSidebarWorkspace,
+        activeSidebarTabId,
+        workspaceTabs.map((tab) => [tab.id, tab.title, tab.favicon, tab.pinned, Boolean(tab.loading)])
+    ]);
+    if (!force && signature === lastTabRenderSignature) return;
+    lastTabRenderSignature = signature;
+
     renderSidebarTabList(sidebarPinnedList, workspaceTabs.filter((tab) => tab.pinned), "Pin a tab to keep it here");
     renderSidebarTabList(sidebarTabsList, workspaceTabs.filter((tab) => !tab.pinned), "No open tabs");
 

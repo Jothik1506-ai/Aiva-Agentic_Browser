@@ -17,6 +17,65 @@
   /* Overridden per workspace by applyWorkspaceTheme() (Arc-style Spaces) */
   --space-tint-top: rgba(45, 58, 51, 0.97);
   --space-tint-bottom: rgba(26, 34, 30, 0.98);
+
+  /* Shared motion system - one set of curves so every surface animates alike */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 0.14s;
+  --dur-base: 0.22s;
+  --dur-slow: 0.36s;
+}
+
+/* Respect the OS "reduce motion" setting: keep state changes instant rather
+   than animated, instead of shipping motion someone has asked not to see. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Keyboard focus is otherwise invisible in this UI; :focus-visible keeps the
+   ring off mouse clicks while restoring it for keyboard navigation. */
+:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Slim, self-coloured scrollbars - the default chrome ones read as a bug
+   against these dark translucent surfaces. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 20px;
+  background-clip: content-box;
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.28);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body,
@@ -29,6 +88,9 @@ html {
   color: var(--text-color);
   font-family: 'Inter', sans-serif;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 /* BACKGROUND STYLES */
@@ -44,14 +106,20 @@ html {
   transition: background-image 0.5s ease-in-out;
 }
 
+/* A flat wash can't keep text legible over an arbitrary wallpaper. This
+   layers a centre-weighted vignette over a top/bottom gradient so the
+   search field and shortcut labels always sit on darker pixels. */
 .backgroundOverlay {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.4);
   z-index: 2;
+  pointer-events: none;
+  background:
+    radial-gradient(115% 85% at 50% 46%, rgba(0, 0, 0, 0.18) 0%, rgba(0, 0, 0, 0.52) 62%, rgba(0, 0, 0, 0.72) 100%),
+    linear-gradient(180deg, rgba(12, 17, 14, 0.72) 0%, rgba(12, 17, 14, 0.2) 26%, rgba(12, 17, 14, 0.3) 68%, rgba(12, 17, 14, 0.78) 100%);
 }
 
 /* CUSTOM TOP BAR (replaces the native OS title bar) */
@@ -100,7 +168,9 @@ html {
   background: transparent;
   color: var(--muted-text);
   cursor: pointer;
-  transition: background 0.18s, color 0.18s;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 
 .topBarIconBtn:hover {
@@ -108,8 +178,19 @@ html {
   color: var(--text-color);
 }
 
+.topBarIconBtn:active {
+  background: rgba(255, 255, 255, 0.13);
+  transform: scale(0.93);
+}
+
+.topBarIconBtn:disabled,
+.topBarIconBtn[aria-disabled="true"] {
+  opacity: 0.32;
+  pointer-events: none;
+}
+
 .topBarIconBtn.active {
-  background: rgba(127, 200, 169, 0.18);
+  background: color-mix(in srgb, var(--accent-color) 18%, transparent);
   color: var(--accent-color);
 }
 
@@ -379,11 +460,21 @@ body.is-resizing .webview, body.is-resizing iframe {
   color: var(--muted-text);
   cursor: pointer;
   font-size: 9px;
+  transition: background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-spring),
+    color var(--dur-fast) var(--ease-out);
 }
 
 .favoriteTile:hover {
-  border-color: rgba(127, 200, 169, 0.24);
-  background: rgba(127, 200, 169, 0.1);
+  border-color: color-mix(in srgb, var(--accent-color) 26%, transparent);
+  background: color-mix(in srgb, var(--accent-color) 11%, transparent);
+  color: var(--text-color);
+  transform: translateY(-2px);
+}
+
+.favoriteTile:active {
+  transform: translateY(0) scale(0.97);
 }
 
 .favoriteTile img {
@@ -441,6 +532,7 @@ body.is-resizing .webview, body.is-resizing iframe {
 }
 
 .sidebarTabItem {
+  position: relative;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -451,17 +543,44 @@ body.is-resizing .webview, body.is-resizing iframe {
   color: var(--muted-text);
   cursor: pointer;
   font-size: 11px;
-  transition: background 0.2s, transform 0.2s, opacity 0.2s;
+  transition: background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
 .sidebarTabItem:hover {
   background: rgba(255, 255, 255, 0.055);
+  color: var(--text-color);
+}
+
+.sidebarTabItem:active {
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .sidebarTabItem.active {
-  border-color: rgba(127, 200, 169, 0.22);
-  background: rgba(127, 200, 169, 0.13);
+  border-color: color-mix(in srgb, var(--accent-color) 24%, transparent);
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
   color: var(--text-color);
+}
+
+/* Arc-style accent rail marking the active tab. Sits inside the row because
+   the scrolling tab list clips anything outside its box. */
+.sidebarTabItem.active::before {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 50%;
+  width: 3px;
+  height: 17px;
+  border-radius: 3px;
+  background: var(--accent-color);
+  transform: translateY(-50%);
+  animation: tabRailIn var(--dur-base) var(--ease-spring);
+}
+
+@keyframes tabRailIn {
+  from { opacity: 0; height: 4px; }
+  to { opacity: 1; height: 17px; }
 }
 
 .sidebarTabFavicon {
@@ -869,13 +988,36 @@ body.sidebarCollapsed.sidebarHoverExpanded .browserSidebar {
 }
 
 .searchContainer {
-  width: 80%;
+  width: 100%;
+  /* Capped rather than 80% of the viewport: a full-width pill on a wide
+     window leaves the caret stranded far from the placeholder text. */
+  max-width: 620px;
   display: flex;
   align-items: center;
-  background: var(--card-bg);
-  padding: 12px 25px;
+  background: rgba(18, 24, 21, 0.62);
+  padding: 13px 22px;
   border-radius: 40px;
-  border: 1px solid var(--border-color);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  transition: border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.searchContainer:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(18, 24, 21, 0.72);
+}
+
+.searchContainer:focus-within {
+  border-color: color-mix(in srgb, var(--accent-color) 55%, transparent);
+  background: rgba(18, 24, 21, 0.86);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42),
+    0 0 0 3px color-mix(in srgb, var(--accent-color) 18%, transparent);
+  transform: translateY(-1px);
 }
 
 .g-logo {
@@ -887,11 +1029,16 @@ body.sidebarCollapsed.sidebarHoverExpanded .browserSidebar {
 
 #searchInput {
   flex: 1;
+  min-width: 0;
   background: transparent;
   border: none;
   color: var(--text-color);
-  font-size: 16px;
+  font-size: 15px;
   outline: none;
+}
+
+#searchInput::placeholder {
+  color: rgba(255, 255, 255, 0.46);
 }
 
 .searchIcons {
@@ -928,29 +1075,42 @@ body.sidebarCollapsed.sidebarHoverExpanded .browserSidebar {
 /* --- HEALTH CARE SYSTEM --- */
 .healthCareTrigger {
   position: fixed;
-  bottom: 78px;
+  /* Bottom-left of the content area, mirroring the assistant button in the
+     bottom-right, so the two floating actions read as a matched pair
+     instead of one drifting in open canvas. */
+  bottom: 25px;
   left: calc(var(--sidebar-width) + 18px);
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: rgba(18, 24, 21, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--text-color);
-  font-size: 24px;
+  font-size: 21px;
   cursor: pointer;
-  backdrop-filter: blur(10px);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  transition: transform var(--dur-base) var(--ease-spring),
+    background var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    left var(--dur-slow) var(--ease-out);
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
 }
 
 .healthCareTrigger:hover {
-  transform: scale(1.1);
-  background: rgba(255, 255, 255, 0.2);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  transform: translateY(-3px);
+  background: color-mix(in srgb, var(--accent-color) 26%, rgba(18, 24, 21, 0.8));
+  border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+}
+
+.healthCareTrigger:active {
+  transform: translateY(0) scale(0.95);
 }
 
 .healthCareModal {
@@ -1332,57 +1492,66 @@ body.sidebarCollapsed.sidebarHoverExpanded .browserSidebar {
 /* FOCUS MODE STYLES */
 .focusModeToggle {
   position: absolute;
-  bottom: 90px;
+  bottom: 84px;
   right: 25px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  background: rgba(255, 255, 255, 0.08);
-  /* Re-adjusting to better glassmorphism */
-  backdrop-filter: blur(20px);
-  padding: 10px 18px;
+  gap: 10px;
+  background: rgba(18, 24, 21, 0.72);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  padding: 9px 14px;
   border-radius: 14px;
-  border: 1px solid var(--border-color);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
   cursor: pointer;
   z-index: 1000;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform var(--dur-base) var(--ease-spring),
+    background var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
   user-select: none;
 }
 
 .focusModeToggle:hover {
-  background: rgba(255, 255, 255, 0.15);
-  transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(24, 32, 28, 0.85);
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+}
+
+.focusModeToggle:active {
+  transform: translateY(0) scale(0.97);
 }
 
 .focusLabel {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-color);
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .focusIcon {
-  width: 32px;
-  height: 32px;
-  background: white;
-  color: #333;
+  width: 26px;
+  height: 26px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-color);
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  font-size: 18px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  font-size: 14px;
+  transition: background var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
 }
 
 .focusModeToggle.active {
-  background: rgba(127, 200, 169, 0.2);
-  border-color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 20%, rgba(18, 24, 21, 0.8));
+  border-color: color-mix(in srgb, var(--accent-color) 55%, transparent);
 }
 
 .focusModeToggle.active .focusIcon {
   background: var(--accent-color);
-  color: var(--text-color);
+  color: #14201a;
 }
 
 /* State when Focus Mode is Active */
@@ -1867,26 +2036,35 @@ body.focusModeActive #customizeBtn {
   position: fixed;
   right: 25px;
   bottom: 25px;
-  width: 45px;
-  height: 45px;
-  background: var(--bg-color);
-  backdrop-filter: blur(15px);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
+  width: 46px;
+  height: 46px;
+  background: rgba(18, 24, 21, 0.72);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 22px;
   cursor: pointer;
   z-index: 2100;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+  transition: transform var(--dur-base) var(--ease-spring),
+    background var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
 }
 
 #aiChatBtn:hover {
-  transform: scale(1.1) translateY(-2px);
-  background: rgba(127, 200, 169, 0.3);
-  border-color: rgba(127, 200, 169, 0.5);
+  transform: translateY(-3px);
+  background: color-mix(in srgb, var(--accent-color) 26%, rgba(18, 24, 21, 0.8));
+  border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+}
+
+#aiChatBtn:active {
+  transform: translateY(0) scale(0.95);
 }
 
 /* AI Chat Button Pulse & Online Indicator */
@@ -2226,10 +2404,11 @@ body.focusModeActive #customizeBtn {
 .shortcutLabel {
   margin-top: 6px;
   font-size: 11px;
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.88);
+  /* Doubled-up shadow keeps labels readable on bright wallpapers too */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 12px rgba(0, 0, 0, 0.55);
   text-align: center;
-  max-width: 60px;
+  max-width: 66px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2250,23 +2429,44 @@ body.focusModeActive #customizeBtn {
 }
 
 .appCircle .iconContainer {
-  width: 44px;
-  /* Slightly smaller */
-  height: 44px;
+  width: 46px;
+  height: 46px;
   background: rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.34);
   overflow: hidden;
+  /* Transform/background only, so the hover lift stays on the compositor
+     instead of triggering layout on every frame. */
+  transition: transform var(--dur-base) var(--ease-spring),
+    background var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
 }
 
 .appCircle:hover .iconContainer {
   background: rgba(255, 255, 255, 0.2);
-  transform: scale(1.1);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.44);
+  transform: translateY(-4px) scale(1.06);
+}
+
+.appCircle:active .iconContainer {
+  transform: translateY(-1px) scale(0.98);
+  transition-duration: var(--dur-fast);
+}
+
+.appCircle .shortcutLabel {
+  transition: color var(--dur-base) var(--ease-out);
+}
+
+.appCircle:hover .shortcutLabel {
+  color: #fff;
 }
 
 .remoteShortcutBtn {
@@ -2424,12 +2624,13 @@ body.focusModeActive #customizeBtn {
 .commandPaletteItem {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 11px;
+  padding: 8px 11px;
   border-radius: 10px;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
 .commandPaletteItem:hover {
@@ -2437,8 +2638,8 @@ body.focusModeActive #customizeBtn {
 }
 
 .commandPaletteItem.selected {
-  background: rgba(127, 200, 169, 0.14);
-  border-color: rgba(127, 200, 169, 0.28);
+  background: color-mix(in srgb, var(--accent-color) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 30%, transparent);
 }
 
 .commandPaletteItemIcon {
