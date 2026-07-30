@@ -5,24 +5,73 @@ const { spawn } = require("child_process");
 
 let pythonProcess = null;
 let cursorPollInterval = null;
+let backendStartupWarningShown = false;
 
-function startPythonServer() {
-    const scriptPath = path.join(__dirname, "backend", "server.py");
-    // Assuming 'python' is in PATH. If using venv, might need full path.
-    pythonProcess = spawn("python", [scriptPath]);
+// In a packaged build, __dirname points inside app.asar - the backend can't
+// run its server.py or read its model files from in there, so it ships as
+// an extraResource instead (see package.json "build.extraResources") and
+// gets addressed via resourcesPath.
+function getBackendDir() {
+    return app.isPackaged
+        ? path.join(process.resourcesPath, "backend")
+        : path.join(__dirname, "backend");
+}
 
-    pythonProcess.stdout.on("data", (data) => {
-        console.log(`Python: ${data}`);
+function warnBackendMissing(win) {
+    if (backendStartupWarningShown) return;
+    backendStartupWarningShown = true;
+    dialog.showMessageBox(win, {
+        type: "warning",
+        title: "Python backend not found",
+        message: "AIVA Agentic Browser needs Python 3.11 with the packages in requirements.txt " +
+            "for the AI assistant, face scanner, and posture tracking to work. Browsing still " +
+            "works without it - install Python and restart the app to enable those features.",
+        buttons: ["OK"]
     });
+}
 
-    pythonProcess.stderr.on("data", (data) => {
-        console.error(`Python Error: ${data}`);
+// Beta note: this still shells out to a system Python interpreter rather
+// than a bundled/frozen one, so those features require the user's own
+// Python 3.11 + requirements.txt install. Different Windows setups expose
+// the interpreter as `python` or (Python launcher, more common on default
+// python.org installs) `py`, so both are tried before giving up.
+function startPythonServer(win) {
+    const scriptPath = path.join(getBackendDir(), "server.py");
+    tryLaunchPython(["python", "py"], scriptPath, win);
+}
+
+function tryLaunchPython(candidates, scriptPath, win) {
+    if (!candidates.length) {
+        console.error("Python Error: no working Python interpreter found (tried: python, py).");
+        warnBackendMissing(win);
+        return;
+    }
+    const [command, ...rest] = candidates;
+    const child = spawn(command, [scriptPath]);
+    let launched = false;
+    let fallbackTried = false;
+    const fallbackToNext = () => {
+        if (fallbackTried) return;
+        fallbackTried = true;
+        tryLaunchPython(rest, scriptPath, win);
+    };
+
+    child.on("spawn", () => {
+        launched = true;
+        pythonProcess = child;
+    });
+    child.on("error", (err) => {
+        if (err.code === "ENOENT") fallbackToNext();
+        else console.error(`Python Error: ${err.message}`);
+    });
+    child.stdout.on("data", (data) => console.log(`Python: ${data}`));
+    child.stderr.on("data", (data) => console.error(`Python Error: ${data}`));
+    child.on("exit", (code) => {
+        if (!launched && code !== 0) fallbackToNext();
     });
 }
 
 function createWindow() {
-    startPythonServer();
-
     const win = new BrowserWindow({
         width: 1400,
         height: 900,
@@ -37,6 +86,7 @@ function createWindow() {
     });
 
     win.loadFile("index.html");
+    startPythonServer(win);
 
     // Custom top bar replaces the native title bar, so the renderer needs
     // IPC hooks for the window controls it now draws itself, and needs to

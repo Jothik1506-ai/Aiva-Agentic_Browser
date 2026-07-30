@@ -1,12 +1,44 @@
 {
   "name": "aiva-agentic-browser",
-  "version": "1.0.0",
+  "version": "0.1.0-beta.1",
   "main": "main.js",
   "private": true,
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win"
   },
   "devDependencies": {
-    "electron": "^39.2.7"
+    "electron": "^39.2.7",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "in.aivafreelancia.agenticbrowser",
+    "productName": "AIVA Agentic Browser",
+    "files": [
+      "**/*",
+      "!backend/__pycache__/**",
+      "!Agentic_Browser-landing-page/**",
+      "!Song 1 final.wav"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend",
+        "filter": ["**/*", "!__pycache__/**"]
+      }
+    ],
+    "directories": {
+      "output": "dist-release"
+    },
+    "win": {
+      "target": "nsis",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
