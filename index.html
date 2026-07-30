@@ -340,6 +340,10 @@
                     <span class="menuSettingsIcon">🌿</span>
                     <span class="menuSettingsText">Health and Care</span>
                 </button>
+                <button id="menuFeedbackBtn" class="menuSettingsRow" type="button">
+                    <span class="menuSettingsIcon">💬</span>
+                    <span class="menuSettingsText">Send Feedback</span>
+                </button>
             </div>
         </div>
     </div>
@@ -430,6 +434,46 @@
             </div>
         </div>
     </div>
+    <!-- FEEDBACK MODAL -->
+    <div id="feedbackModal" class="modal hidden">
+        <div class="modalContent modalContentWide">
+            <div class="panelHeader">
+                <h3>Send feedback</h3>
+            </div>
+            <p class="modalSubtitle">Tell us what's working, what's broken, or what you wish Aiva could do. We read every note.</p>
+            <div class="modalBody">
+                <div class="inputGroup">
+                    <label>Type</label>
+                    <div id="feedbackCategoryGroup" class="feedbackCategoryGroup">
+                        <button type="button" class="feedbackCategoryBtn" data-category="bug">🐞 Bug</button>
+                        <button type="button" class="feedbackCategoryBtn" data-category="idea">💡 Idea</button>
+                        <button type="button" class="feedbackCategoryBtn" data-category="praise">🎉 Praise</button>
+                        <button type="button" class="feedbackCategoryBtn" data-category="other">💬 Other</button>
+                    </div>
+                </div>
+                <div class="inputGroup">
+                    <label>How's it going overall? <span class="inputOptionalHint">(optional)</span></label>
+                    <div id="feedbackRatingGroup" class="feedbackRatingGroup">
+                        <button type="button" class="feedbackStar" data-rating="1">★</button>
+                        <button type="button" class="feedbackStar" data-rating="2">★</button>
+                        <button type="button" class="feedbackStar" data-rating="3">★</button>
+                        <button type="button" class="feedbackStar" data-rating="4">★</button>
+                        <button type="button" class="feedbackStar" data-rating="5">★</button>
+                    </div>
+                </div>
+                <div class="inputGroup">
+                    <label>Details</label>
+                    <textarea id="feedbackMessageInput" placeholder="What happened, or what would help?" rows="5"></textarea>
+                </div>
+                <div id="feedbackStatus" class="feedbackStatus hidden"></div>
+            </div>
+            <div class="modalFooter">
+                <button id="cancelFeedbackBtn" class="secondaryBtn">Cancel</button>
+                <button id="submitFeedbackBtn" class="primaryBtn">Send feedback</button>
+            </div>
+        </div>
+    </div>
+
     <!-- CUSTOM CONTEXT MENU -->
     <div id="customContextMenu" class="customContextMenu">
         <div class="contextMenuItem" id="ctxPinTab">Pin Tab</div>

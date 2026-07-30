@@ -1427,6 +1427,120 @@ shortcutModal.onclick = (e) => {
     if (e.target === shortcutModal) hideShortcutModal();
 };
 
+// ------------------- Feedback Modal Logic -------------------
+const feedbackModal = document.getElementById("feedbackModal");
+const feedbackMessageInput = document.getElementById("feedbackMessageInput");
+const feedbackStatus = document.getElementById("feedbackStatus");
+const submitFeedbackBtn = document.getElementById("submitFeedbackBtn");
+const cancelFeedbackBtn = document.getElementById("cancelFeedbackBtn");
+const feedbackCategoryButtons = Array.from(document.querySelectorAll(".feedbackCategoryBtn"));
+const feedbackStars = Array.from(document.querySelectorAll(".feedbackStar"));
+let feedbackCategory = "other";
+let feedbackRating = 0;
+
+function setFeedbackCategory(category) {
+    feedbackCategory = category;
+    feedbackCategoryButtons.forEach((btn) => {
+        btn.classList.toggle("selected", btn.dataset.category === category);
+    });
+}
+
+function setFeedbackRating(rating) {
+    feedbackRating = rating;
+    feedbackStars.forEach((star) => {
+        star.classList.toggle("filled", Number(star.dataset.rating) <= rating);
+    });
+}
+
+function setFeedbackStatus(text, kind) {
+    if (!text) {
+        feedbackStatus.classList.add("hidden");
+        return;
+    }
+    feedbackStatus.textContent = text;
+    feedbackStatus.className = `feedbackStatus ${kind}`;
+}
+
+function showFeedbackModal() {
+    feedbackModal.classList.remove("hidden");
+    feedbackMessageInput.value = "";
+    setFeedbackCategory("other");
+    setFeedbackRating(0);
+    setFeedbackStatus("");
+    submitFeedbackBtn.disabled = false;
+    submitFeedbackBtn.textContent = "Send feedback";
+    feedbackMessageInput.focus();
+}
+
+function hideFeedbackModal() {
+    feedbackModal.classList.add("hidden");
+}
+
+feedbackCategoryButtons.forEach((btn) => {
+    btn.onclick = () => setFeedbackCategory(btn.dataset.category);
+});
+feedbackStars.forEach((star) => {
+    star.onclick = () => setFeedbackRating(
+        feedbackRating === Number(star.dataset.rating) ? 0 : Number(star.dataset.rating)
+    );
+});
+
+cancelFeedbackBtn.onclick = hideFeedbackModal;
+feedbackModal.onclick = (e) => {
+    if (e.target === feedbackModal) hideFeedbackModal();
+};
+
+submitFeedbackBtn.onclick = async () => {
+    const message = feedbackMessageInput.value.trim();
+    if (!message) {
+        setFeedbackStatus("Please add a few words before sending.", "error");
+        feedbackMessageInput.focus();
+        return;
+    }
+
+    submitFeedbackBtn.disabled = true;
+    submitFeedbackBtn.textContent = "Sending…";
+    setFeedbackStatus("", "");
+
+    let pageUrl = null;
+    try {
+        if (webview && !webWrap.classList.contains("hidden")) pageUrl = webview.getURL() || null;
+    } catch { /* webview not ready - fine to omit */ }
+
+    try {
+        const response = await fetch(`${BACKEND_URL}/feedback`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                message,
+                category: feedbackCategory,
+                rating: feedbackRating || null,
+                page_url: pageUrl
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || data.status !== "success") {
+            throw new Error(data.message || "Something went wrong.");
+        }
+        setFeedbackStatus("Thanks! Your feedback was sent.", "success");
+        submitFeedbackBtn.textContent = "Sent ✓";
+        setTimeout(hideFeedbackModal, 1100);
+    } catch (error) {
+        console.error("Feedback submit failed:", error);
+        setFeedbackStatus("Couldn't reach the backend. Please try again.", "error");
+        submitFeedbackBtn.disabled = false;
+        submitFeedbackBtn.textContent = "Send feedback";
+    }
+};
+
+const menuFeedbackBtn = document.getElementById("menuFeedbackBtn");
+if (menuFeedbackBtn) {
+    menuFeedbackBtn.onclick = () => {
+        menuPanel.classList.add("hidden");
+        showFeedbackModal();
+    };
+}
+
 // ------------------- Backend Data -------------------
 
 async function fetchData() {
@@ -2401,7 +2515,8 @@ function buildPaletteItems(query) {
         { icon: "🌿", title: "Health and Care", run: () => document.getElementById("healthCareModal")?.classList.remove("hidden") },
         { icon: "◉", title: "Toggle Face Scanner", run: () => (faceScannerActive ? stopFaceScanner() : startFaceScanner()) },
         { icon: "🖼️", title: "Customize Wallpaper", run: () => document.getElementById("wallpaperPanel")?.classList.toggle("hidden") },
-        { icon: "▣", title: "Capture Screenshot", run: () => document.getElementById("cameraBtn")?.click() }
+        { icon: "▣", title: "Capture Screenshot", run: () => document.getElementById("cameraBtn")?.click() },
+        { icon: "💬", title: "Send Feedback", run: () => showFeedbackModal() }
     ];
     Object.entries(SIDEBAR_WORKSPACES).forEach(([key, label]) => {
         commands.push({ icon: "❖", title: `Switch to ${label} space`, run: () => switchSidebarWorkspace(key) });

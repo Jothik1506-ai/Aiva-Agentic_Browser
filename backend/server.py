@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Optional
 import os
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 from comtypes import CLSCTX_ALL
@@ -51,6 +52,12 @@ class ChatRequest(BaseModel):
 
 class ImageRequest(BaseModel):
     image: str
+
+class FeedbackRequest(BaseModel):
+    message: str
+    category: str = "other"
+    rating: Optional[int] = None
+    page_url: Optional[str] = None
 
 
 # --- Mock Data ---
@@ -431,6 +438,44 @@ def log_history(req: ResolveRequest):
     # Retrieve title/url from body if needed, currently just logging
     print(f"Visited: {req.query}")
     return {"status": "logged"}
+
+
+# --- Feedback ---
+FEEDBACK_LOG_PATH = os.path.join(current_dir, "feedback_log.jsonl")
+FEEDBACK_CATEGORIES = {"bug", "idea", "praise", "other"}
+MAX_FEEDBACK_CHARS = 4000
+
+
+@app.post("/api/feedback")
+def submit_feedback(req: FeedbackRequest):
+    """
+    Appends user feedback to a local JSONL file for later review. Not sent
+    anywhere external - this is a lightweight "review it ourselves" log, not
+    a hosted feedback service.
+    """
+    message = req.message.strip()
+    if not message:
+        return {"status": "error", "message": "Feedback message cannot be empty."}
+
+    category = req.category if req.category in FEEDBACK_CATEGORIES else "other"
+    rating = req.rating if req.rating in (1, 2, 3, 4, 5) else None
+
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "category": category,
+        "rating": rating,
+        "message": message[:MAX_FEEDBACK_CHARS],
+        "page_url": (req.page_url or "")[:500] or None,
+    }
+
+    try:
+        with open(FEEDBACK_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"ERROR: Failed to write feedback: {e}")
+        return {"status": "error", "message": "Could not save feedback right now."}
+
+    return {"status": "success"}
 
 
 # --- OpenAI Setup ---

@@ -11,3 +11,4 @@ out/
 __pycache__/
 *.py[cod]
 backend/face_landmarker.task
+backend/feedback_log.jsonl

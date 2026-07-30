@@ -2351,6 +2351,116 @@ body.focusModeActive #customizeBtn {
   border-color: var(--accent-color);
 }
 
+.inputGroup textarea {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px;
+  border-radius: 8px;
+  color: white;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 90px;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.inputGroup textarea:focus {
+  border-color: var(--accent-color);
+}
+
+.inputOptionalHint {
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 400;
+}
+
+.modalContentWide {
+  width: 420px;
+  max-width: calc(100vw - 48px);
+}
+
+.modalSubtitle {
+  margin: 6px 0 0;
+  color: var(--muted-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.feedbackCategoryGroup {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.feedbackCategoryBtn {
+  padding: 8px 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted-text);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.feedbackCategoryBtn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text-color);
+}
+
+.feedbackCategoryBtn.selected {
+  background: color-mix(in srgb, var(--accent-color) 20%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 50%, transparent);
+  color: var(--text-color);
+}
+
+.feedbackRatingGroup {
+  display: flex;
+  gap: 4px;
+}
+
+.feedbackStar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 22px;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-spring);
+}
+
+.feedbackStar:hover {
+  transform: scale(1.12);
+}
+
+.feedbackStar.filled {
+  color: #f5c451;
+}
+
+.feedbackStatus {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.feedbackStatus.success {
+  background: rgba(127, 200, 169, 0.14);
+  color: var(--accent-color);
+}
+
+.feedbackStatus.error {
+  background: rgba(229, 72, 77, 0.14);
+  color: #ff8b8f;
+}
+
 .modalFooter {
   display: flex;
   justify-content: flex-end;
