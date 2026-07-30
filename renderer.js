@@ -118,20 +118,24 @@ function toggleFocusMode() {
 }
 
 // Default Shortcuts
+// Default speed-dial: AIVA's own products, not third-party services. Verified
+// against the live site (aivafreelancia.in) rather than guessed, since these
+// ship as defaults for every new install. Users can remove any of these
+// (removeDefaultShortcut persists the removal) and add their own.
 const defaultShortcuts = [
-    { name: "Google", url: "https://google.com", icon: "https://www.google.com/s2/favicons?domain=google.com&sz=64" },
-    { name: "Gemini", url: "https://gemini.google.com", icon: "https://www.gstatic.com/lamda/images/gemini_favicon_f069958c85030456e93de685481c559f160ea06b.png" },
-    { name: "Drive", url: "https://drive.google.com", icon: "https://www.google.com/s2/favicons?domain=drive.google.com&sz=64" },
-    { name: "YouTube", url: "https://youtube.com", icon: "https://www.google.com/s2/favicons?domain=youtube.com&sz=64" },
-    { name: "Maps", url: "https://maps.google.com", icon: "https://www.google.com/s2/favicons?domain=maps.google.com&sz=64" },
-    { name: "Photos", url: "https://photos.google.com", icon: "https://www.google.com/s2/favicons?domain=photos.google.com&sz=64" }
+    { name: "AIVA Freelancia", url: "https://aivafreelancia.in", icon: "assets/logo.jpg" },
+    { name: "AIVA AI", url: "https://aivafreelancia.in/AI", icon: "assets/logo.jpg" },
+    { name: "Agentic RAG", url: "https://aivafreelancia.in/agentic-rag", icon: "assets/logo.jpg" },
+    { name: "Hire a Freelancer", url: "https://aivafreelancia.in/join", icon: "assets/logo.jpg" },
+    { name: "Meet the Founder", url: "https://aivafreelancia.in/founder", icon: "assets/logo.jpg" },
+    { name: "About AIVA", url: "https://aivafreelancia.in/about", icon: "assets/logo.jpg" }
 ];
 
 const educationalShortcuts = [
-    { name: "Google", url: "https://google.com", icon: "https://www.google.com/s2/favicons?domain=google.com&sz=64" },
-    { name: "YouTube", url: "https://youtube.com", icon: "https://www.google.com/s2/favicons?domain=youtube.com&sz=64" },
+    { name: "AIVA Freelancia", url: "https://aivafreelancia.in", icon: "assets/logo.jpg" },
+    { name: "AIVA AI", url: "https://aivafreelancia.in/AI", icon: "assets/logo.jpg" },
     { name: "GitHub", url: "https://github.com", icon: "https://www.google.com/s2/favicons?domain=github.com&sz=64" },
-    { name: "Gemini", url: "https://gemini.google.com", icon: "https://www.gstatic.com/lamda/images/gemini_favicon_f069958c85030456e93de685481c559f160ea06b.png" },
+    { name: "Agentic RAG", url: "https://aivafreelancia.in/agentic-rag", icon: "assets/logo.jpg" },
     { name: "Wikipedia", url: "https://wikipedia.org", icon: "https://www.google.com/s2/favicons?domain=wikipedia.org&sz=64" }
 ];
 
@@ -224,7 +228,15 @@ function createShortcutElement(app, onRemove) {
     iconContainer.className = "iconContainer";
 
     const icon = document.createElement("img");
-    icon.src = `https://www.google.com/s2/favicons?domain=${app.url}&sz=64`;
+    // A local/bundled icon (e.g. our own logo for AIVA's products) is used
+    // directly rather than trying Google's favicon cache first - a brand-new
+    // domain has no cached favicon there, so the "fallback" would never
+    // trigger (a blank/default globe is still a successful image load, not
+    // an error) and our own branded icon would never actually show.
+    const isRemoteIconOnly = !app.icon || app.icon.startsWith("http") || app.icon.startsWith("data:");
+    icon.src = isRemoteIconOnly
+        ? `https://www.google.com/s2/favicons?domain=${app.url}&sz=64`
+        : app.icon;
     icon.onerror = () => { if (app.icon) icon.src = app.icon; };
 
     iconContainer.appendChild(icon);
@@ -2290,9 +2302,97 @@ document.addEventListener("click", (e) => {
     }
 });
 
+// ------------------- FIRST-RUN WALKTHROUGH -------------------
+const ONBOARDING_COMPLETE_KEY = "aivaOnboardingComplete";
+const onboardingOverlay = document.getElementById("onboardingOverlay");
+const onboardingSlides = Array.from(document.querySelectorAll(".onboardingSlide"));
+const onboardingDots = document.getElementById("onboardingDots");
+const onboardingBackBtn = document.getElementById("onboardingBackBtn");
+const onboardingNextBtn = document.getElementById("onboardingNextBtn");
+const onboardingSkipBtn = document.getElementById("onboardingSkipBtn");
+const onboardingProductList = document.getElementById("onboardingProductList");
+let onboardingStep = 0;
+
+function renderOnboardingProducts() {
+    if (!onboardingProductList) return;
+    onboardingProductList.innerHTML = "";
+    defaultShortcuts.forEach((product) => {
+        const row = document.createElement("div");
+        row.className = "onboardingProductRow";
+
+        const icon = document.createElement("img");
+        icon.src = product.icon || "assets/logo.jpg";
+        icon.alt = "";
+
+        const label = document.createElement("span");
+        label.className = "onboardingProductName";
+        label.textContent = product.name;
+
+        const openBtn = document.createElement("button");
+        openBtn.type = "button";
+        openBtn.className = "onboardingProductOpenBtn";
+        openBtn.textContent = "Open";
+        openBtn.onclick = () => createSidebarTab(product.url, { activate: false });
+
+        row.append(icon, label, openBtn);
+        onboardingProductList.appendChild(row);
+    });
+}
+
+function renderOnboardingStep() {
+    onboardingSlides.forEach((slide, index) => {
+        slide.classList.toggle("active", index === onboardingStep);
+    });
+    onboardingDots.querySelectorAll(".onboardingDot").forEach((dot, index) => {
+        dot.classList.toggle("active", index === onboardingStep);
+    });
+    onboardingBackBtn.classList.toggle("hidden", onboardingStep === 0);
+    const isLast = onboardingStep === onboardingSlides.length - 1;
+    onboardingNextBtn.textContent = isLast ? "Get started" : "Next";
+}
+
+function goToOnboardingStep(index) {
+    onboardingStep = Math.max(0, Math.min(index, onboardingSlides.length - 1));
+    renderOnboardingStep();
+}
+
+function closeOnboarding() {
+    onboardingOverlay.classList.add("hidden");
+    localStorage.setItem(ONBOARDING_COMPLETE_KEY, "true");
+}
+
+function initOnboarding() {
+    if (!onboardingOverlay || !onboardingSlides.length) return;
+    if (localStorage.getItem(ONBOARDING_COMPLETE_KEY) === "true") return;
+
+    onboardingDots.innerHTML = "";
+    onboardingSlides.forEach((_, index) => {
+        const dot = document.createElement("span");
+        dot.className = "onboardingDot";
+        dot.onclick = () => goToOnboardingStep(index);
+        onboardingDots.appendChild(dot);
+    });
+
+    renderOnboardingProducts();
+    goToOnboardingStep(0);
+    onboardingOverlay.classList.remove("hidden");
+}
+
+onboardingNextBtn.onclick = () => {
+    if (onboardingStep === onboardingSlides.length - 1) closeOnboarding();
+    else goToOnboardingStep(onboardingStep + 1);
+};
+onboardingBackBtn.onclick = () => goToOnboardingStep(onboardingStep - 1);
+onboardingSkipBtn.onclick = closeOnboarding;
+document.addEventListener("keydown", (event) => {
+    if (onboardingOverlay.classList.contains("hidden")) return;
+    if (event.key === "Escape") closeOnboarding();
+});
+
 // Initialize
 initializeSidebar();
 renderShortcuts();
+initOnboarding();
 showStartupReminders();
 fetchData();
 setInterval(fetchData, 5000); // Keep checking backend status every 5 seconds

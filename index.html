@@ -78,17 +78,17 @@
                 <span>Essentials</span>
             </div>
             <div id="sidebarFavorites" class="sidebarFavorites">
-                <button class="favoriteTile" data-url="https://www.youtube.com" title="YouTube">
-                    <img src="https://www.google.com/s2/favicons?sz=64&domain=youtube.com" alt="">
-                    <span>YouTube</span>
+                <button class="favoriteTile" data-url="https://aivafreelancia.in" title="AIVA Freelancia">
+                    <img src="assets/logo.jpg" alt="">
+                    <span>AIVA</span>
                 </button>
-                <button class="favoriteTile" data-url="https://notebooklm.google.com" title="NotebookLM">
-                    <img src="https://www.google.com/s2/favicons?sz=64&domain=notebooklm.google.com" alt="">
-                    <span>NotebookLM</span>
+                <button class="favoriteTile" data-url="https://aivafreelancia.in/AI" title="AIVA AI">
+                    <img src="assets/logo.jpg" alt="">
+                    <span>AIVA AI</span>
                 </button>
-                <button class="favoriteTile" data-url="https://github.com" title="GitHub">
-                    <img src="https://www.google.com/s2/favicons?sz=64&domain=github.com" alt="">
-                    <span>GitHub</span>
+                <button class="favoriteTile" data-url="https://aivafreelancia.in/agentic-rag" title="Agentic RAG">
+                    <img src="assets/logo.jpg" alt="">
+                    <span>Agentic RAG</span>
                 </button>
             </div>
         </div>
@@ -492,6 +492,74 @@
                 <kbd class="commandPaletteHint">Esc</kbd>
             </div>
             <div id="commandPaletteResults" class="commandPaletteResults"></div>
+        </div>
+    </div>
+
+    <!-- FIRST-RUN WALKTHROUGH -->
+    <div id="onboardingOverlay" class="onboardingOverlay hidden">
+        <div class="onboardingCard">
+            <button id="onboardingSkipBtn" class="onboardingSkipBtn" type="button">Skip</button>
+
+            <div class="onboardingSlides">
+                <section class="onboardingSlide" data-step="0">
+                    <div class="onboardingIcon"><img src="assets/logo.jpg" alt="Aiva" /></div>
+                    <h2>Welcome to Aiva</h2>
+                    <p>The agentic browser from <strong>AIVA Freelancia</strong> — it doesn't just show you the web,
+                        it can act on it. A quick tour of what's here before you dive in.</p>
+                </section>
+
+                <section class="onboardingSlide" data-step="1">
+                    <div class="onboardingIcon">🤖</div>
+                    <h2>Aiva Agentic Assistant</h2>
+                    <p>Open the chat panel (bottom-right) and ask Aiva to do something, not just answer a question —
+                        it can navigate, read the page, click buttons, fill and submit forms, and manage tabs on
+                        your behalf. Every step is narrated, and you can stop it anytime.</p>
+                </section>
+
+                <section class="onboardingSlide" data-step="2">
+                    <div class="onboardingIcon">⌘</div>
+                    <h2>Command Palette</h2>
+                    <p>Press <kbd>Ctrl</kbd> <kbd>K</kbd> anywhere to fuzzy-search your open tabs, shortcuts, and
+                        browser commands — or hand a query straight to Aiva without leaving the keyboard.</p>
+                </section>
+
+                <section class="onboardingSlide" data-step="3">
+                    <div class="onboardingIcon">◧</div>
+                    <h2>Sidebar &amp; Spaces</h2>
+                    <p>Pin tabs, drag to reorder, and switch between color-coded Personal / Work / Research spaces.
+                        Hover the left edge to reveal it, or pin it open from the icon in the top bar.</p>
+                </section>
+
+                <section class="onboardingSlide" data-step="4">
+                    <div class="onboardingIcon">🌿</div>
+                    <h2>Wellness, built in</h2>
+                    <p>Face Scanner (fatigue detection), Focus Mode, and Health &amp; Care live in
+                        <strong>Settings (•••)</strong> in the sidebar — all opt-in, all off until you turn them on.</p>
+                </section>
+
+                <section class="onboardingSlide onboardingProductsSlide" data-step="5">
+                    <div class="onboardingIcon"><img src="assets/logo.jpg" alt="Aiva" /></div>
+                    <h2>Explore AIVA Freelancia</h2>
+                    <p>These are already pinned to your dashboard as default shortcuts — remove any you don't want,
+                        or open one now:</p>
+                    <div id="onboardingProductList" class="onboardingProductList"></div>
+                </section>
+
+                <section class="onboardingSlide" data-step="6">
+                    <div class="onboardingIcon">💬</div>
+                    <h2>Tell us what to fix</h2>
+                    <p>This is a new browser — you'll hit rough edges. Send feedback anytime from
+                        <strong>Settings (•••)</strong> or the command palette; we read every note.</p>
+                </section>
+            </div>
+
+            <div class="onboardingFooter">
+                <div id="onboardingDots" class="onboardingDots"></div>
+                <div class="onboardingNavBtns">
+                    <button id="onboardingBackBtn" class="secondaryBtn" type="button">Back</button>
+                    <button id="onboardingNextBtn" class="primaryBtn" type="button">Next</button>
+                </div>
+            </div>
         </div>
     </div>
 
