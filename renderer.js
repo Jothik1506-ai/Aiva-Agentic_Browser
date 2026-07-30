@@ -118,17 +118,13 @@ function toggleFocusMode() {
 }
 
 // Default Shortcuts
-// Default speed-dial: AIVA's own products, not third-party services. Verified
-// against the live site (aivafreelancia.in) rather than guessed, since these
-// ship as defaults for every new install. Users can remove any of these
+// Default speed-dial: just AIVA's two flagship pages. Verified against the
+// live site (aivafreelancia.in) rather than guessed, since these ship as
+// defaults for every new install. Users can remove either
 // (removeDefaultShortcut persists the removal) and add their own.
 const defaultShortcuts = [
     { name: "AIVA Freelancia", url: "https://aivafreelancia.in", icon: "assets/logo.jpg" },
-    { name: "AIVA AI", url: "https://aivafreelancia.in/AI", icon: "assets/logo.jpg" },
-    { name: "Agentic RAG", url: "https://aivafreelancia.in/agentic-rag", icon: "assets/logo.jpg" },
-    { name: "Hire a Freelancer", url: "https://aivafreelancia.in/join", icon: "assets/logo.jpg" },
-    { name: "Meet the Founder", url: "https://aivafreelancia.in/founder", icon: "assets/logo.jpg" },
-    { name: "About AIVA", url: "https://aivafreelancia.in/about", icon: "assets/logo.jpg" }
+    { name: "Agentic RAG", url: "https://aivafreelancia.in/agentic-rag", icon: "assets/logo.jpg" }
 ];
 
 const educationalShortcuts = [
