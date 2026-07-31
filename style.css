@@ -1645,7 +1645,11 @@ body.focusModeActive #customizeBtn {
 /* Keeps the video element mounted and actively decoding (needed for the
    fatigue-analysis frame capture to keep working) while taking the card
    fully out of the dashboard's visual layout - the Settings menu's Face
-   Scanner toggle (#menuFaceScannerBtn) is the only visible control now. */
+   Scanner toggle (#menuFaceScannerBtn) is the only control now. While
+   actually scanning, .previewVisible turns this into a small floating
+   self-view bubble instead of the default 1px/invisible state, so there's
+   visual confirmation the camera is really on (and how it's framed)
+   without bringing back the full dashboard card. */
 .faceScannerHiddenHost {
   position: fixed;
   top: 0;
@@ -1655,6 +1659,70 @@ body.focusModeActive #customizeBtn {
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.faceScannerHiddenHost.previewVisible {
+  top: auto;
+  left: calc(var(--sidebar-width) + 18px);
+  bottom: 85px;
+  width: 150px;
+  height: 113px;
+  padding: 0;
+  box-sizing: border-box;
+  opacity: 1;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  pointer-events: auto;
+  transition: opacity var(--dur-base) var(--ease-out), left var(--dur-slow) var(--ease-out);
+}
+
+.faceScannerHiddenHost.previewVisible #faceScanError,
+.faceScannerHiddenHost.previewVisible .faceScanStatus,
+.faceScannerHiddenHost.previewVisible #authStatus,
+.faceScannerHiddenHost.previewVisible #toggleFaceScannerBtn,
+.faceScannerHiddenHost.previewVisible #faceScannerIdle {
+  display: none !important;
+}
+
+.faceScannerHiddenHost.previewVisible .videoWrapper {
+  width: 100%;
+  height: 100%;
+  margin-bottom: 0;
+  border-radius: 0;
+  border: 0;
+}
+
+.faceScannerPreviewLabel {
+  display: none;
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  z-index: 1;
+}
+
+.faceScannerHiddenHost.previewVisible .faceScannerPreviewLabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.faceScannerPreviewLabel::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4CAF50;
+  box-shadow: 0 0 6px #4CAF50;
 }
 
 .cardHeaderCenter h3 {

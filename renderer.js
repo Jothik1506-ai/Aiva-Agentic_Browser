@@ -1754,9 +1754,15 @@ const menuFaceScannerBtn = document.getElementById("menuFaceScannerBtn");
 const menuFaceScannerState = document.getElementById("menuFaceScannerState");
 
 function setMenuFaceScannerState(active) {
-    if (!menuFaceScannerBtn) return;
-    menuFaceScannerBtn.classList.toggle("active", active);
-    if (menuFaceScannerState) menuFaceScannerState.textContent = active ? "On" : "Off";
+    if (menuFaceScannerBtn) {
+        menuFaceScannerBtn.classList.toggle("active", active);
+        if (menuFaceScannerState) menuFaceScannerState.textContent = active ? "On" : "Off";
+    }
+    // Surface a small floating self-view while actually scanning, so there's
+    // visual proof the camera is on and how it's framed - otherwise the host
+    // stays at its default 1px/invisible state (see .faceScannerHiddenHost).
+    const host = document.getElementById("faceScannerHost");
+    if (host) host.classList.toggle("previewVisible", active);
 }
 
 if (menuFaceScannerBtn) {

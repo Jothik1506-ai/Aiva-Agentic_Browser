@@ -221,7 +221,7 @@
              toggle - this host keeps the actual video element mounted and
              decoding in the background (not display:none) without taking up
              dashboard space or showing its own card. -->
-        <div class="faceScannerHiddenHost card faceScannerCard">
+        <div id="faceScannerHost" class="faceScannerHiddenHost card faceScannerCard">
             <div id="faceScanError" class="errorBannerSmall hidden">
                 ✕ Connection Error: Cannot reach backend server.<br>Is it running?
             </div>
@@ -232,6 +232,7 @@
                     <span>Start only when you want face analysis.</span>
                 </div>
                 <video id="selfieVideo" class="hidden" autoplay muted></video>
+                <span class="faceScannerPreviewLabel">Face Scanner</span>
             </div>
             <div class="faceScanStatus">
                 <span class="eyeIcon">👁</span> Face analysis is paused
