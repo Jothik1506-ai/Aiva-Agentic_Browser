@@ -77,6 +77,7 @@ function createWindow() {
         height: 900,
         backgroundColor: "#1f2a24",
         frame: false,
+        icon: path.join(__dirname, "assets", "app-icon.ico"),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: true,
