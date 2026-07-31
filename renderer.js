@@ -990,7 +990,7 @@ function initializeSidebar() {
     updateSidebarModeButton(storedCollapsed);
 
     const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-    if (storedWidth >= 220 && storedWidth <= 420) {
+    if (storedWidth >= 160 && storedWidth <= 420) {
         document.documentElement.style.setProperty("--sidebar-width", `${storedWidth}px`);
         document.documentElement.style.setProperty("--sidebar-expanded-width", `${storedWidth}px`);
     }
@@ -1061,7 +1061,7 @@ function initializeSidebar() {
         if (document.body.classList.contains("sidebarHoverExpanded")) return;
 
         const insideWindow = position.y >= 0 && position.y <= position.height;
-        if (insideWindow && position.x >= 0 && position.x <= 24) {
+        if (insideWindow && position.x >= 0 && position.x <= 40) {
             document.body.classList.add("sidebarHoverExpanded");
         }
     });
@@ -1103,7 +1103,7 @@ function initializeSidebar() {
         if (resizeAnimationFrame) cancelAnimationFrame(resizeAnimationFrame);
         
         resizeAnimationFrame = requestAnimationFrame(() => {
-            const width = Math.min(420, Math.max(220, event.clientX));
+            const width = Math.min(420, Math.max(160, event.clientX));
             document.documentElement.style.setProperty("--sidebar-width", `${width}px`);
             document.documentElement.style.setProperty("--sidebar-expanded-width", `${width}px`);
             localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));

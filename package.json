@@ -1,6 +1,6 @@
 {
   "name": "aiva-agentic-browser",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "main": "main.js",
   "private": true,
   "scripts": {
@@ -36,11 +36,19 @@
       {
         "from": "backend",
         "to": "backend",
-        "filter": ["**/*", "!__pycache__/**"]
+        "filter": [
+          "**/*",
+          "!__pycache__/**"
+        ]
       }
     ],
     "directories": {
       "output": "dist-release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Jothik1506-ai",
+      "repo": "Aiva-Agentic_Browser"
     },
     "win": {
       "target": "nsis",
@@ -55,5 +63,8 @@
       "installerIcon": "assets/app-icon.ico",
       "uninstallerIcon": "assets/app-icon.ico"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

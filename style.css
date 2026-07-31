@@ -656,6 +656,10 @@ body.is-resizing .webview, body.is-resizing iframe {
 
 .sidebarUtilityRow {
   justify-content: space-between;
+  /* At the narrow end of the resizable range (160px) five 30px icon buttons
+     don't all fit on one line - wrap instead of clipping the last one. */
+  flex-wrap: wrap;
+  row-gap: 4px;
 }
 
 /* Auto-hide mode: the sidebar is fully off-canvas (invisible, no reserved

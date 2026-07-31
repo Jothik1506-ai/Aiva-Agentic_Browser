@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, screen } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const { autoUpdater } = require("electron-updater");
 
 let pythonProcess = null;
 let cursorPollInterval = null;
@@ -71,6 +72,28 @@ function tryLaunchPython(candidates, scriptPath, win) {
     });
 }
 
+// Checked once per launch (not aggressively polled) against the GitHub
+// Releases feed electron-builder writes into every build's latest.yml.
+// Forcing the "latest" channel keeps this simple across beta and stable
+// releases alike - without it, a prerelease version (e.g. 0.1.0-beta.2)
+// would only look at a separate beta.yml feed and could miss a stable
+// release entirely. Downloads happen silently in the background; the
+// update installs automatically the next time the user quits the app.
+function initAutoUpdate() {
+    if (!app.isPackaged) return; // dev runs aren't a real release to check against
+    try {
+        autoUpdater.channel = "latest";
+        autoUpdater.autoDownload = true;
+        autoUpdater.autoInstallOnAppQuit = true;
+        autoUpdater.on("error", (err) => console.error("AutoUpdater error:", err == null ? err : err.message));
+        autoUpdater.on("update-available", (info) => console.log("Update available:", info.version));
+        autoUpdater.on("update-downloaded", (info) => console.log("Update downloaded, installs on quit:", info.version));
+        autoUpdater.checkForUpdatesAndNotify().catch((err) => console.error("AutoUpdater check failed:", err.message));
+    } catch (err) {
+        console.error("AutoUpdater setup failed:", err.message);
+    }
+}
+
 function createWindow() {
     const win = new BrowserWindow({
         width: 1400,
@@ -88,6 +111,7 @@ function createWindow() {
 
     win.loadFile("index.html");
     startPythonServer(win);
+    initAutoUpdate();
 
     // Custom top bar replaces the native title bar, so the renderer needs
     // IPC hooks for the window controls it now draws itself, and needs to
