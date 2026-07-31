@@ -24,6 +24,11 @@ const toggleFaceScannerBtn = document.getElementById("toggleFaceScannerBtn");
 
 const BACKEND_URL = "http://127.0.0.1:5001/api";
 
+// Feedback goes to the hosted AIVA Work Manager, not the local Python backend,
+// so submissions from installed copies actually reach us instead of sitting in
+// a file on the user's own machine.
+const FEEDBACK_ENDPOINT = "https://aiva-work-manager.onrender.com/api/feedback";
+
 // ------------------- Phone Detection State -------------------
 let phoneUsageSeconds = 0;
 const phoneWarning = document.getElementById("phoneWarning");
@@ -1436,6 +1441,92 @@ shortcutModal.onclick = (e) => {
 };
 
 // ------------------- Feedback Modal Logic -------------------
+const FEEDBACK_QUEUE_KEY = "aivaPendingFeedback";
+// Render's free tier sleeps when idle and can take ~30s to wake, so allow a
+// long-ish window before giving up and queueing the submission instead.
+const FEEDBACK_TIMEOUT_MS = 20000;
+
+function getAppVersion() {
+    try {
+        return require("./package.json").version || null;
+    } catch {
+        return null;
+    }
+}
+
+function getPlatformLabel() {
+    try {
+        return `${process.platform} ${process.arch}`;
+    } catch {
+        return null;
+    }
+}
+
+// Returns "sent" | "rejected" | "retry".
+//
+// The distinction matters: anything other than an explicit 400 gets queued for
+// a later attempt. In particular a 404 (endpoint moved / URL misconfigured) must
+// NOT count as delivered - treating it as success would silently bin every
+// user's feedback while cheerfully telling them it was sent.
+async function postFeedback(payload) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FEEDBACK_TIMEOUT_MS);
+    try {
+        const response = await fetch(FEEDBACK_ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        });
+        if (response.ok) return "sent";
+        // Only a 400 means the payload itself is malformed - resending the same
+        // bytes would fail identically, so don't hoard it in the queue forever.
+        if (response.status === 400) {
+            console.warn("Feedback rejected as invalid by server.");
+            return "rejected";
+        }
+        console.warn(`Feedback not delivered (status ${response.status}); will retry later.`);
+        return "retry";
+    } catch (error) {
+        console.error("Feedback submit failed:", error);
+        return "retry";
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+function readFeedbackQueue() {
+    try {
+        const queued = JSON.parse(localStorage.getItem(FEEDBACK_QUEUE_KEY) || "[]");
+        return Array.isArray(queued) ? queued : [];
+    } catch {
+        return [];
+    }
+}
+
+function queueFeedback(payload) {
+    const queue = readFeedbackQueue();
+    queue.push(payload);
+    // Cap the backlog so a long offline stretch can't grow localStorage forever.
+    localStorage.setItem(FEEDBACK_QUEUE_KEY, JSON.stringify(queue.slice(-25)));
+}
+
+async function flushFeedbackQueue() {
+    const queue = readFeedbackQueue();
+    if (!queue.length) return;
+
+    const stillPending = [];
+    let delivered = 0;
+    for (const payload of queue) {
+        const result = await postFeedback(payload);
+        if (result === "retry") stillPending.push(payload);
+        else if (result === "sent") delivered += 1;
+        // "rejected" is dropped: the server says this payload can never succeed.
+    }
+    localStorage.setItem(FEEDBACK_QUEUE_KEY, JSON.stringify(stillPending));
+    if (delivered > 0) console.log(`Delivered ${delivered} queued feedback item(s).`);
+}
+
 const feedbackModal = document.getElementById("feedbackModal");
 const feedbackMessageInput = document.getElementById("feedbackMessageInput");
 const feedbackStatus = document.getElementById("feedbackStatus");
@@ -1515,30 +1606,37 @@ submitFeedbackBtn.onclick = async () => {
         if (webview && !webWrap.classList.contains("hidden")) pageUrl = webview.getURL() || null;
     } catch { /* webview not ready - fine to omit */ }
 
-    try {
-        const response = await fetch(`${BACKEND_URL}/feedback`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                message,
-                category: feedbackCategory,
-                rating: feedbackRating || null,
-                page_url: pageUrl
-            })
-        });
-        const data = await response.json();
-        if (!response.ok || data.status !== "success") {
-            throw new Error(data.message || "Something went wrong.");
-        }
+    const payload = {
+        message,
+        category: feedbackCategory,
+        rating: feedbackRating || null,
+        page_url: pageUrl,
+        source: "agentic-browser",
+        app_version: getAppVersion(),
+        platform: getPlatformLabel()
+    };
+
+    const result = await postFeedback(payload);
+    if (result === "sent") {
         setFeedbackStatus("Thanks! Your feedback was sent.", "success");
         submitFeedbackBtn.textContent = "Sent ✓";
         setTimeout(hideFeedbackModal, 1100);
-    } catch (error) {
-        console.error("Feedback submit failed:", error);
-        setFeedbackStatus("Couldn't reach the backend. Please try again.", "error");
+        return;
+    }
+
+    if (result === "rejected") {
+        setFeedbackStatus("That didn't go through — please try rewording it.", "error");
         submitFeedbackBtn.disabled = false;
         submitFeedbackBtn.textContent = "Send feedback";
+        return;
     }
+
+    // Never drop feedback just because the network (or a sleeping free-tier
+    // dyno) was unavailable - hold it locally and retry on the next launch.
+    queueFeedback(payload);
+    setFeedbackStatus("Saved offline — we'll send it automatically next time you're online.", "success");
+    submitFeedbackBtn.textContent = "Saved ✓";
+    setTimeout(hideFeedbackModal, 1600);
 };
 
 const menuFeedbackBtn = document.getElementById("menuFeedbackBtn");
@@ -2400,6 +2498,8 @@ fetchData();
 setInterval(fetchData, 5000); // Keep checking backend status every 5 seconds
 setInterval(checkVolumeStatus, 5000); // Check volume every 5 seconds for maximum responsiveness
 setTimeout(checkVolumeStatus, 2000); // Initial check after startup
+// Delayed so a cold-start retry doesn't compete with the app's own startup work.
+setTimeout(() => { flushFeedbackQueue().catch(() => {}); }, 8000);
 
 
 // ------------------- WALLPAPER CUSTOMIZATION -------------------
