@@ -74,15 +74,19 @@ function tryLaunchPython(candidates, scriptPath, win) {
 
 // Checked once per launch (not aggressively polled) against the GitHub
 // Releases feed electron-builder writes into every build's latest.yml.
-// Forcing the "latest" channel keeps this simple across beta and stable
-// releases alike - without it, a prerelease version (e.g. 0.1.0-beta.2)
-// would only look at a separate beta.yml feed and could miss a stable
-// release entirely. Downloads happen silently in the background; the
-// update installs automatically the next time the user quits the app.
+// Downloads happen silently in the background; the update installs
+// automatically the next time the user quits the app.
+//
+// Do NOT set autoUpdater.channel here. It is not "which .yml feed to read" -
+// it is the *prerelease channel name* (alpha/beta/...), matched against the
+// prerelease component of each release tag. Setting it to "latest" matched
+// nothing (no tag has a "-latest.N" suffix), so every check died with
+// "No published versions on GitHub". Left unset, electron-updater derives the
+// channel from the running version: a 0.1.0-beta.2 build looks for newer beta
+// *and* stable releases, and a stable build only takes stable ones.
 function initAutoUpdate() {
     if (!app.isPackaged) return; // dev runs aren't a real release to check against
     try {
-        autoUpdater.channel = "latest";
         autoUpdater.autoDownload = true;
         autoUpdater.autoInstallOnAppQuit = true;
         autoUpdater.on("error", (err) => console.error("AutoUpdater error:", err == null ? err : err.message));
