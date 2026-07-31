@@ -27,7 +27,7 @@ const BACKEND_URL = "http://127.0.0.1:5001/api";
 // Feedback goes to the hosted AIVA Work Manager, not the local Python backend,
 // so submissions from installed copies actually reach us instead of sitting in
 // a file on the user's own machine.
-const FEEDBACK_ENDPOINT = "https://aiva-work-manager.onrender.com/api/feedback";
+const FEEDBACK_ENDPOINT = "https://aivafreelancia.in/work-manager/api/feedback";
 
 // ------------------- Phone Detection State -------------------
 let phoneUsageSeconds = 0;
