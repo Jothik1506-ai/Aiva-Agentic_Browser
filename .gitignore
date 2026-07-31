@@ -3,7 +3,9 @@ dist/
 build/
 out/
 release/
+release*/
 dist-release/
+dist-release*/
 .env
 .DS_Store
 *.log

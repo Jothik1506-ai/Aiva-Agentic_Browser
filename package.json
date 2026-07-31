@@ -15,10 +15,22 @@
     "appId": "in.aivafreelancia.agenticbrowser",
     "productName": "AIVA Agentic Browser",
     "files": [
-      "**/*",
-      "!backend/__pycache__/**",
-      "!Agentic_Browser-landing-page/**",
-      "!Song 1 final.wav"
+      "main.js",
+      "preload.js",
+      "index.html",
+      "renderer.js",
+      "style.css",
+      "breathing.html",
+      "breathing.js",
+      "breathing.css",
+      "neck.html",
+      "neck.js",
+      "neck.css",
+      "meditation.html",
+      "meditation.js",
+      "meditation.css",
+      "assets/**/*",
+      "package.json"
     ],
     "extraResources": [
       {
