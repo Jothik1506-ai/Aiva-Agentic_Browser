@@ -352,6 +352,22 @@
     <!-- AI CHAT TRIGGER (Floating) -->
     <button id="aiChatBtn" class="aiChatTrigger">🤖</button>
 
+    <!-- Aiva noticing sustained strain on its own, outside any chat turn. Sits
+         outside #dashboard so it stays visible while a webview tab is active -
+         that is exactly when someone has been staring at a screen the longest. -->
+    <div id="wellnessNudge" class="wellnessNudge hidden" role="status" aria-live="polite">
+        <div class="wellnessNudgeHead">
+            <span class="aiIcon">🤖</span>
+            <span>Aiva noticed</span>
+            <button id="wellnessNudgeClose" class="wellnessNudgeClose" title="Dismiss">✕</button>
+        </div>
+        <p id="wellnessNudgeText" class="wellnessNudgeText"></p>
+        <div class="wellnessNudgeActions">
+            <button id="wellnessNudgeBreak" type="button" class="wellnessNudgePrimary">Take a break</button>
+            <button id="wellnessNudgeSnooze" type="button">Not now</button>
+        </div>
+    </div>
+
     <!-- AI CHATBOT PANEL -->
     <div id="aiChatPanel" class="aiChatPanel hidden">
         <div class="chatHeader">

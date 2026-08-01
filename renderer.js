@@ -1899,6 +1899,7 @@ async function startFaceScanner() {
         toggleFaceScannerBtn.textContent = "Stop Face Scanner";
         toggleFaceScannerBtn.classList.add("active");
         setMenuFaceScannerState(true);
+        resetWellnessSession();
         authStatus.innerHTML = '<span class="statusDot on"></span> Scanner active';
         faceScanStatus.innerHTML = '<span class="eyeIcon">👁</span> Analyzing facial expressions';
         faceScanStatus.style.color = "";
@@ -1948,6 +1949,7 @@ function stopFaceScanner() {
     absenceSeconds = 0;
     if (phoneWarning) phoneWarning.classList.add("hidden");
     if (absenceWarning) absenceWarning.classList.add("hidden");
+    resetWellnessSession();
 }
 
 async function processFrame() {
@@ -1972,6 +1974,8 @@ async function processFrame() {
         });
         const data = await res.json();
         if (!faceScannerActive) return;
+
+        recordWellnessSample(data.state || "No Face", data.detected && data.using_phone);
 
         if (data.detected) {
             // Update UI with specific state
@@ -2050,6 +2054,317 @@ toggleFaceScannerBtn.onclick = () => {
 };
 
 window.addEventListener("beforeunload", stopFaceScanner);
+
+// ------------------- WELLNESS-AWARE AGENT -------------------
+// The face scanner already reads the user's state once a second, but that read
+// used to only paint a status line and then vanish. This is what makes Aiva
+// different from every other agentic browser: the agent keeps a short memory of
+// how the person is actually doing and lets it change its behaviour - it
+// answers with their current strain in mind, interrupts its own long tool runs
+// instead of grinding through all 14 steps while someone is visibly fatigued,
+// and offers the breathing/neck/meditation apps that already ship in here.
+
+const WELLNESS_WINDOW_MS = 15 * 60 * 1000;
+const WELLNESS_SAMPLE_MS = 1000; // processFrame polls once a second
+const WELLNESS_STRAIN_STATES = new Set(["Drowsy", "Yawning", "Stressed", "Headache"]);
+const WELLNESS_ABSENT_STATES = new Set(["No Face", "Error"]);
+const WELLNESS_SNOOZE_MS = 20 * 60 * 1000;
+const WELLNESS_LONG_SESSION_MINUTES = 45;
+// Stepping away from the desk for this long is itself a break, so the
+// "minutes since last break" clock should restart rather than keep climbing.
+const WELLNESS_AWAY_IS_BREAK_MS = 2 * 60 * 1000;
+
+let wellnessSamples = [];
+let wellnessSessionStart = null;
+let wellnessLastBreakAt = null;
+let wellnessAwayStreak = 0;
+let wellnessSnoozedUntil = 0;
+
+const BREAK_ACTIVITIES = {
+    breathing: { label: "Breathing exercise", page: "breathing.html", blurb: "a couple of minutes of guided breathing" },
+    neck: { label: "Neck & posture stretch", page: "neck.html", blurb: "a short guided neck routine" },
+    meditation: { label: "Meditation", page: "meditation.html", blurb: "a calm reset" }
+};
+
+function resetWellnessSession() {
+    wellnessSamples = [];
+    wellnessSessionStart = null;
+    wellnessLastBreakAt = null;
+    wellnessAwayStreak = 0;
+    hideWellnessNudge();
+}
+
+function recordWellnessSample(state, usingPhone) {
+    const now = Date.now();
+    if (wellnessSessionStart === null) wellnessSessionStart = now;
+
+    if (WELLNESS_ABSENT_STATES.has(state)) {
+        wellnessAwayStreak += WELLNESS_SAMPLE_MS;
+        if (wellnessAwayStreak >= WELLNESS_AWAY_IS_BREAK_MS) wellnessLastBreakAt = now;
+    } else {
+        wellnessAwayStreak = 0;
+    }
+
+    wellnessSamples.push({
+        t: now,
+        state,
+        strain: WELLNESS_STRAIN_STATES.has(state),
+        away: WELLNESS_ABSENT_STATES.has(state),
+        phone: Boolean(usingPhone)
+    });
+
+    const cutoff = now - WELLNESS_WINDOW_MS;
+    while (wellnessSamples.length && wellnessSamples[0].t < cutoff) wellnessSamples.shift();
+
+    maybeNudgeForWellness();
+}
+
+function markBreakTaken() {
+    wellnessLastBreakAt = Date.now();
+    wellnessSamples = [];
+    wellnessSnoozedUntil = Date.now() + WELLNESS_SNOOZE_MS;
+    hideWellnessNudge();
+}
+
+function samplesToMinutes(count) {
+    return Math.round(((count * WELLNESS_SAMPLE_MS) / 60000) * 10) / 10;
+}
+
+// Deliberately conservative. A few stray drowsy frames must never interrupt
+// someone mid-task, so "high" needs either a sustained unbroken streak or half
+// of a genuinely long observation window.
+function gradeWellness({ observedMinutes, strainRatio, strainStreakMinutes, minutesSinceBreak }) {
+    if (observedMinutes < 2) return "ok";
+    if (strainStreakMinutes >= 3 || (observedMinutes >= 5 && strainRatio >= 0.5)) return "high";
+    if (strainStreakMinutes >= 1.5 || strainRatio >= 0.3 || minutesSinceBreak >= WELLNESS_LONG_SESSION_MINUTES) {
+        return "elevated";
+    }
+    return "ok";
+}
+
+function getWellnessSnapshot() {
+    if (!faceScannerActive || !wellnessSamples.length || wellnessSessionStart === null) {
+        return { active: false, level: "unknown" };
+    }
+
+    const now = Date.now();
+    const present = wellnessSamples.filter((sample) => !sample.away);
+    const strained = present.filter((sample) => sample.strain);
+    // Rounded once, then used for both grading and reporting - otherwise the
+    // level could disagree with the percentage shown alongside it.
+    const strainRatio = present.length
+        ? Math.round((strained.length / present.length) * 100) / 100
+        : 0;
+
+    let streak = 0;
+    for (let i = wellnessSamples.length - 1; i >= 0; i--) {
+        if (!wellnessSamples[i].strain) break;
+        streak++;
+    }
+
+    const counts = {};
+    for (const sample of strained) counts[sample.state] = (counts[sample.state] || 0) + 1;
+    const dominantSignal = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || null;
+
+    const observedMinutes = samplesToMinutes(present.length);
+    const strainStreakMinutes = samplesToMinutes(streak);
+    const screenMinutes = Math.round((now - wellnessSessionStart) / 60000);
+    const minutesSinceBreak = Math.round((now - (wellnessLastBreakAt || wellnessSessionStart)) / 60000);
+
+    return {
+        active: true,
+        observedMinutes,
+        screenMinutes,
+        minutesSinceBreak,
+        strainRatio,
+        strainStreakMinutes,
+        dominantSignal,
+        phoneMinutes: samplesToMinutes(wellnessSamples.filter((sample) => sample.phone).length),
+        level: gradeWellness({ observedMinutes, strainRatio, strainStreakMinutes, minutesSinceBreak })
+    };
+}
+
+function describeWellnessForModel(snapshot) {
+    if (!snapshot.active) return null;
+    const parts = [
+        `strain level: ${snapshot.level}`,
+        `${snapshot.screenMinutes} min at the screen this session`,
+        `${snapshot.minutesSinceBreak} min since the last break`,
+        `${Math.round(snapshot.strainRatio * 100)}% of the last ${snapshot.observedMinutes} observed min showed strain`
+    ];
+    if (snapshot.strainStreakMinutes >= 1) {
+        parts.push(`${snapshot.strainStreakMinutes} min of unbroken strain right now`);
+    }
+    if (snapshot.dominantSignal) parts.push(`most common signal: ${snapshot.dominantSignal}`);
+    if (snapshot.phoneMinutes >= 1) parts.push(`${snapshot.phoneMinutes} min of phone use`);
+    return parts.join("; ");
+}
+
+function summariseStrainForUser(snapshot) {
+    const signal = {
+        Drowsy: "you're looking drowsy",
+        Yawning: "you've been yawning",
+        Stressed: "you're looking tense",
+        Headache: "you're showing signs of eye or head strain"
+    }[snapshot.dominantSignal] || "you're showing signs of strain";
+
+    if (snapshot.strainStreakMinutes >= 1) {
+        return `${signal} — for about ${snapshot.strainStreakMinutes} min straight now`;
+    }
+    return `${signal}, and it's been ${snapshot.minutesSinceBreak} min since your last break`;
+}
+
+// --- Break offers in chat ---
+
+function addBreakCard(activityKey, reason) {
+    const activity = BREAK_ACTIVITIES[activityKey] || BREAK_ACTIVITIES.breathing;
+
+    const card = document.createElement("div");
+    card.className = "wellnessCard";
+
+    const text = document.createElement("div");
+    text.className = "wellnessCardText";
+    text.textContent = reason || `${activity.label} — ${activity.blurb}.`;
+
+    const actions = document.createElement("div");
+    actions.className = "wellnessCardActions";
+
+    const startBtn = document.createElement("button");
+    startBtn.type = "button";
+    startBtn.className = "wellnessCardPrimary";
+    startBtn.textContent = `Start ${activity.label.toLowerCase()}`;
+    startBtn.onclick = () => {
+        markBreakTaken();
+        window.location.href = activity.page;
+    };
+
+    const laterBtn = document.createElement("button");
+    laterBtn.type = "button";
+    laterBtn.textContent = "Not now";
+    laterBtn.onclick = () => {
+        wellnessSnoozedUntil = Date.now() + WELLNESS_SNOOZE_MS;
+        actions.remove();
+        const dismissed = document.createElement("div");
+        dismissed.className = "wellnessCardDismissed";
+        dismissed.textContent = "Okay — I'll leave it for a while.";
+        card.appendChild(dismissed);
+    };
+
+    actions.append(startBtn, laterBtn);
+    card.append(text, actions);
+    chatMessages.appendChild(card);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// --- Mid-run checkpoint ---
+// The point of difference: a long agent run voluntarily stops to check in
+// rather than running the full step budget while the person is worn out.
+
+const WELLNESS_CHECKPOINT_AFTER_STEPS = 5;
+let pendingCheckpointResolve = null;
+
+function resolveCheckpoint(choice) {
+    if (!pendingCheckpointResolve) return;
+    const resolve = pendingCheckpointResolve;
+    pendingCheckpointResolve = null;
+    resolve(choice);
+}
+
+function awaitAgentCheckpoint(snapshot, step) {
+    return new Promise((resolve) => {
+        pendingCheckpointResolve = resolve;
+
+        const card = document.createElement("div");
+        card.className = "wellnessCard wellnessCheckpoint";
+
+        const text = document.createElement("div");
+        text.className = "wellnessCardText";
+        text.textContent =
+            `I'm ${step} steps into this and ${summariseStrainForUser(snapshot)}. ` +
+            `I can keep going, or park this and pick it back up after a break.`;
+
+        const actions = document.createElement("div");
+        actions.className = "wellnessCardActions";
+
+        const continueBtn = document.createElement("button");
+        continueBtn.type = "button";
+        continueBtn.textContent = "Keep going";
+        continueBtn.onclick = () => {
+            actions.remove();
+            wellnessSnoozedUntil = Date.now() + WELLNESS_SNOOZE_MS;
+            resolveCheckpoint("continue");
+        };
+
+        const pauseBtn = document.createElement("button");
+        pauseBtn.type = "button";
+        pauseBtn.className = "wellnessCardPrimary";
+        pauseBtn.textContent = "Pause & take a break";
+        pauseBtn.onclick = () => {
+            actions.remove();
+            resolveCheckpoint("pause");
+        };
+
+        actions.append(continueBtn, pauseBtn);
+        card.append(text, actions);
+        chatMessages.appendChild(card);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+}
+
+// --- Proactive nudge, outside any chat turn ---
+
+const wellnessNudge = document.getElementById("wellnessNudge");
+const wellnessNudgeText = document.getElementById("wellnessNudgeText");
+
+function hideWellnessNudge() {
+    if (wellnessNudge) wellnessNudge.classList.add("hidden");
+}
+
+function showWellnessNudge(snapshot) {
+    if (!wellnessNudge || !wellnessNudgeText) return;
+    const summary = summariseStrainForUser(snapshot);
+    const screenTime = snapshot.screenMinutes >= 1
+        ? ` You've been at the screen for ${snapshot.screenMinutes} min.`
+        : "";
+    wellnessNudgeText.textContent = `${summary.charAt(0).toUpperCase()}${summary.slice(1)}.${screenTime}`;
+    wellnessNudge.classList.remove("hidden");
+}
+
+// Never interrupts an agent run in flight - the run has its own checkpoint for
+// that, and two competing prompts would be noise. Also stays out of the way
+// while the chat panel is open: the assistant is already right there, and the
+// nudge sits under the panel anyway.
+function maybeNudgeForWellness() {
+    if (!wellnessNudge || activeChatController) return;
+    if (!aiChatPanel.classList.contains("hidden")) return;
+    if (!wellnessNudge.classList.contains("hidden")) return;
+    if (Date.now() < wellnessSnoozedUntil) return;
+
+    const snapshot = getWellnessSnapshot();
+    if (snapshot.level !== "high") return;
+    showWellnessNudge(snapshot);
+}
+
+if (wellnessNudge) {
+    document.getElementById("wellnessNudgeClose").onclick = () => {
+        wellnessSnoozedUntil = Date.now() + WELLNESS_SNOOZE_MS;
+        hideWellnessNudge();
+    };
+    document.getElementById("wellnessNudgeSnooze").onclick = () => {
+        wellnessSnoozedUntil = Date.now() + WELLNESS_SNOOZE_MS;
+        hideWellnessNudge();
+    };
+    document.getElementById("wellnessNudgeBreak").onclick = () => {
+        const snapshot = getWellnessSnapshot();
+        hideWellnessNudge();
+        if (aiChatPanel.classList.contains("hidden")) toggleChatPanel();
+        addMessage(
+            `Noticed ${summariseStrainForUser(snapshot)}. Here's a quick reset — your work stays exactly where it is.`,
+            false
+        );
+        addBreakCard(snapshot.dominantSignal === "Stressed" ? "meditation" : "neck");
+    };
+}
 
 // ------------------- AI CHATBOT FUNCTIONALITY -------------------
 const aiChatPanel = document.getElementById("aiChatPanel");
@@ -2148,10 +2463,13 @@ function describeToolCall(toolCall) {
         go_forward: "Going forward",
         reload_page: "Reloading the current page",
         find_elements: "Looking at what's on the page",
-        list_tabs: "Checking open tabs"
+        list_tabs: "Checking open tabs",
+        get_wellness_status: "Checking how you're doing"
     };
     const args = toolCall.arguments || {};
     switch (toolCall.name) {
+        case "suggest_break":
+            return `Offering a ${(BREAK_ACTIVITIES[args.activity] || BREAK_ACTIVITIES.breathing).label.toLowerCase()}`;
         case "navigate":
             return `Opening ${args.target || "the requested page"}`;
         case "open_tab":
@@ -2183,6 +2501,12 @@ async function attachCurrentPageContext(requestBody) {
     requestBody.page_context = pageContext;
     requestBody.page_url = webview.getURL();
     return true;
+}
+
+function attachWellnessContext(requestBody) {
+    delete requestBody.wellness_context;
+    const description = describeWellnessForModel(getWellnessSnapshot());
+    if (description) requestBody.wellness_context = description;
 }
 
 async function executeBrowserTool(name, args = {}) {
@@ -2224,6 +2548,26 @@ async function executeBrowserTool(name, args = {}) {
                 const loadResult = waitForWebviewLoad();
                 webview.reload();
                 return await loadResult;
+            }
+            case "get_wellness_status": {
+                const snapshot = getWellnessSnapshot();
+                if (!snapshot.active) {
+                    return {
+                        success: true,
+                        monitoring: false,
+                        note: "The face scanner is off, so there is no wellness reading. Do not guess how the user feels; ask them, or suggest turning the scanner on."
+                    };
+                }
+                return { success: true, monitoring: true, ...snapshot };
+            }
+            case "suggest_break": {
+                const activity = BREAK_ACTIVITIES[args.activity] ? args.activity : "breathing";
+                addBreakCard(activity, args.reason);
+                return {
+                    success: true,
+                    offered: activity,
+                    note: "A break card was shown with a start button. The user chooses - do not navigate them there yourself."
+                };
             }
             case "find_elements":
                 return await findPageElements(args.keyword);
@@ -2304,11 +2648,35 @@ async function sendMessage() {
     agentRunCancelled = false;
     setAgentRunning(true);
 
+    let checkpointOffered = false;
+
     try {
         usingPageContext = await attachCurrentPageContext(requestBody);
+        attachWellnessContext(requestBody);
 
         for (let step = 0; step < MAX_AGENT_STEPS; step++) {
             if (agentRunCancelled) throw new DOMException("Task stopped", "AbortError");
+
+            // Check in once, partway through a long run, rather than silently
+            // burning the whole step budget while the user is visibly worn out.
+            if (!checkpointOffered && step >= WELLNESS_CHECKPOINT_AFTER_STEPS) {
+                const snapshot = getWellnessSnapshot();
+                if (snapshot.level === "high") {
+                    checkpointOffered = true;
+                    setAgentStatus("Paused — checking in with you");
+                    const choice = await awaitAgentCheckpoint(snapshot, step);
+                    if (agentRunCancelled) throw new DOMException("Task stopped", "AbortError");
+                    if (choice === "pause") {
+                        addMessage(
+                            "Parked here. Nothing is lost — tell me to continue whenever you're back.",
+                            false,
+                            usingPageContext
+                        );
+                        addBreakCard(snapshot.dominantSignal === "Stressed" ? "meditation" : "neck");
+                        return;
+                    }
+                }
+            }
 
             setAgentStatus(step === 0 ? "Aiva is thinking…" : `Aiva is planning step ${step + 1}…`);
             const response = await fetch(`${BACKEND_URL}/chat`, {
@@ -2349,6 +2717,7 @@ async function sendMessage() {
             }
 
             usingPageContext = (await attachCurrentPageContext(requestBody)) || usingPageContext;
+            attachWellnessContext(requestBody);
         }
 
         const actionsSoFar = requestBody.tool_history.map((exchange) => describeToolCall(exchange)).join(", ");
@@ -2363,6 +2732,7 @@ async function sendMessage() {
             addMessage(`I couldn't complete that task: ${error.message}`, false, usingPageContext);
         }
     } finally {
+        resolveCheckpoint("pause");
         activeChatController = null;
         setAgentStatus("");
         setAgentRunning(false);
@@ -2373,6 +2743,9 @@ stopAgentBtn.onclick = () => {
     if (!activeChatController) return;
     agentRunCancelled = true;
     setAgentStatus("Stopping…");
+    // A run paused at a wellness checkpoint isn't waiting on a fetch, so
+    // aborting the controller alone would leave it hanging on the prompt.
+    resolveCheckpoint("pause");
     activeChatController.abort();
     try {
         webview.stop();

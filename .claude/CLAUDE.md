@@ -84,6 +84,7 @@ Tools are defined in `BROWSER_TOOLS` (`server.py`) and executed in
 | Reading | `read_page`, `find_elements`, `scroll_page` |
 | Interaction | `click_element`, `fill_input` |
 | Tabs | `open_tab`, `list_tabs`, `switch_tab`, `close_tab` |
+| Wellness | `get_wellness_status`, `suggest_break` |
 
 Page interaction works by index, not selector: `find_elements` walks the guest
 DOM, filters to visible/enabled interactive nodes, stamps each with a
@@ -98,6 +99,55 @@ if so, waits for it to finish before the next step runs.
 Backend validates replayed `tool_history` against `BROWSER_TOOL_NAMES` and caps
 both history length and per-result size before rebuilding the OpenAI message
 array.
+
+## The wellness-aware agent (the product differentiator)
+
+Every other agentic browser reads the *page*. Aiva also reads the *person*, and
+lets that change how the agent behaves. This is the one thing competitors
+cannot copy without a camera pipeline, so treat it as load-bearing.
+
+`processFrame()` already polled `/api/analyze_face` once a second; those reads
+now also feed `recordWellnessSample()` in `renderer.js`, which keeps a rolling
+15-minute window of `{state, strain, away, phone}` samples. `getWellnessSnapshot()`
+derives screen time, time since last break, strain ratio, unbroken strain streak,
+and a `level` of `ok` / `elevated` / `high` via `gradeWellness()`.
+
+Four things consume that snapshot:
+1. **Chat context** — `attachWellnessContext()` puts a one-line summary on
+   `wellness_context`, which `/api/chat` injects as a system message. The system
+   prompt tells the model to let it change *how* it works (shorter answers, no
+   optional side-quests at `high`), mention it at most once per conversation,
+   never diagnose, and drop it if the user says they're fine.
+2. **Mid-run checkpoint** — in `sendMessage()`, once a run passes
+   `WELLNESS_CHECKPOINT_AFTER_STEPS` (5) at `level === "high"`, the agent stops
+   itself and offers "Keep going" / "Pause & take a break" instead of silently
+   burning the remaining step budget. This is the headline behaviour.
+3. **Tools** — `get_wellness_status` lets the model check in; `suggest_break`
+   renders an offer card wired to the existing breathing/neck/meditation apps.
+   It is an *offer*: the tool never navigates, the user clicks.
+4. **Proactive nudge** — `#wellnessNudge` appears on sustained `high` strain
+   outside any chat turn.
+
+Tuning invariants worth preserving (all covered by tests, see below):
+- `gradeWellness()` is deliberately conservative — a brief drowsy blip must
+  never interrupt. `high` needs a 3-min unbroken streak or ≥50% of a ≥5-min
+  window.
+- `strainRatio` is rounded **once**, before grading, so the level never
+  disagrees with the percentage reported next to it.
+- The nudge is suppressed during an agent run (the checkpoint covers that) and
+  while the chat panel is open (it sits under the panel at z-index 1600 vs 2000).
+- `#wellnessNudge` must stay **outside** `#dashboard` — the dashboard is hidden
+  whenever a webview tab is active, which is precisely when the nudge matters.
+- Stopping the scanner calls `resetWellnessSession()` and drops every sample.
+  No wellness data is persisted anywhere, ever.
+- Going away for 2+ min counts as a break and restarts the break clock.
+
+Testing: this logic is verified by driving the **real running renderer** over
+CDP (`--remote-debugging-port`) with synthetic samples fed through the actual
+`recordWellnessSample()`, plus a backend suite that imports the real `server.py`
+and stubs only the OpenAI client to inspect the assembled message array. Neither
+re-implements the logic under test. Don't replace these with unit tests that
+mock the functions being tested.
 
 Spotify: `requirements.txt` includes `spotipy` and `.env.example` has
 `SPOTIPY_CLIENT_ID`/`SECRET`, but there is no actual Spotify API integration wired up
@@ -174,7 +224,12 @@ Discussed direction, smallest-first:
    `fill_input` / `scroll_page` let the model act on the page, plus
    `open_tab` / `list_tabs` / `switch_tab` / `close_tab` for tab control. See the
    "Ports & endpoints" section above for how indexing and settling work.
-4. **Full autonomous multi-step agent (next)** — richer planning and recovery,
+4. **Wellness-aware agent (implemented)** — the agent reads the face-scanner
+   signals as context, self-interrupts long runs when strain is high, and offers
+   the built-in break apps. See "The wellness-aware agent" above. This is the
+   differentiator; the rest of the roadmap is table stakes competitors already
+   have.
+5. **Full autonomous multi-step agent (next)** — richer planning and recovery,
    a user-facing permission prompt before consequential actions, audit logs, and
    reusable saved workflows. The guardrails today are only the step cap, the Stop
    button, and system-prompt instructions telling the model not to enter
