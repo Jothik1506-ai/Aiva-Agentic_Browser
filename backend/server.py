@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 from comtypes import CLSCTX_ALL
 import time
+import math
 
 # Load .env from parent directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -338,6 +339,21 @@ def analyze_face(req: ImageRequest = Body(...)):
                 state = "Focused"
                 details = "User appears alert"
                 
+            # --- Posture geometry ---
+            # Raw normalized measurements only; no slouch verdict here. Everyone
+            # sits at a different height and distance from their webcam, so these
+            # are meaningless in absolute terms - the client compares them against
+            # a baseline it calibrates per session (see calibratePosture).
+            #   nose_y     rises toward 1.0 as the head drops down the frame
+            #   face_scale grows as the user leans toward the screen
+            #   tilt       roll angle of the eye line, for head-cocked-sideways
+            eye_outer_left = landmarks[33]
+            eye_outer_right = landmarks[263]
+            tilt_deg = math.degrees(math.atan2(
+                eye_outer_right.y - eye_outer_left.y,
+                eye_outer_right.x - eye_outer_left.x
+            ))
+
             return {
                 "detected": True,
                 "state": state,
@@ -347,6 +363,11 @@ def analyze_face(req: ImageRequest = Body(...)):
                     "ear": float(avg_ear),
                     "mar": float(mar),
                     "brow": float(norm_brow_dist)
+                },
+                "posture": {
+                    "nose_y": float(nose_tip.y),
+                    "face_scale": float(face_width),
+                    "tilt": float(tilt_deg)
                 }
             }
                 

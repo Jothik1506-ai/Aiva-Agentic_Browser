@@ -1768,71 +1768,79 @@ function showVolumeWarning(volume) {
     }, 10000);
 }
 
-// ------------------- Startup Reminders -------------------
-function showStartupReminders() {
+// ------------------- Wellness Reminders -------------------
+// These were three blind setTimeouts fired once at startup - posture at 10s,
+// water at 30s, eye care at 50s - regardless of whether the camera was even on.
+// Telling someone to fix their posture without having looked at them is both
+// useless and the fastest way to get every reminder in the app ignored.
+//
+// Posture and eye care are now driven by what the camera actually sees, and
+// stay silent when the scanner is off because there is nothing to see. Water
+// is still a timer: no webcam can detect thirst, and pretending otherwise
+// would be dishonest. Its interval is now a realistic 45 minutes.
+
+const REMINDER_COOLDOWN_MS = 10 * 60 * 1000;
+const REMINDER_DURATION_MS = 8000;
+const EYE_BREAK_INTERVAL_MS = 20 * 60 * 1000; // the 20-20-20 rule
+const WATER_INTERVAL_MS = 45 * 60 * 1000;
+
+const lastReminderShownAt = {};
+
+function showReminderCard({ icon, title, text }, durationMs = REMINDER_DURATION_MS) {
     const container = document.getElementById("reminderContainer");
     if (!container) return;
-
-    // Ensure container is visible to start receiving cards
     container.classList.remove("hidden");
-    container.innerHTML = ""; // Clear any existing
 
-    // Helper to schedule a reminder
-    const scheduleReminder = (data, delayMs, durationMs) => {
-        setTimeout(() => {
-            const card = document.createElement("div");
-            card.className = "bottomReminderCard";
-            card.innerHTML = `
-                <div class="icon">${data.icon}</div>
-                <div class="text">
-                    <strong>${data.title}</strong>
-                    <p>${data.text}</p>
-                </div>
-            `;
+    const card = document.createElement("div");
+    card.className = "bottomReminderCard";
 
-            // Allow manual dismiss
-            card.onclick = () => {
-                card.style.opacity = "0";
-                setTimeout(() => card.remove(), 300);
-            };
+    const iconEl = document.createElement("div");
+    iconEl.className = "icon";
+    iconEl.textContent = icon;
 
-            container.appendChild(card);
+    const textEl = document.createElement("div");
+    textEl.className = "text";
+    const titleEl = document.createElement("strong");
+    titleEl.textContent = title;
+    const bodyEl = document.createElement("p");
+    bodyEl.textContent = text;
+    textEl.append(titleEl, bodyEl);
 
-            // Auto-vanish after duration
-            setTimeout(() => {
-                if (card.parentNode) {
-                    card.style.opacity = "0";
-                    card.style.transform = "translateY(20px)"; // Slide down out
-                    setTimeout(() => card.remove(), 500);
-                }
-            }, durationMs);
+    card.append(iconEl, textEl);
 
-        }, delayMs);
+    card.onclick = () => {
+        card.style.opacity = "0";
+        setTimeout(() => card.remove(), 300);
     };
 
-    // --- TIMELINE CONFIGURATION ---
-    // User Request: Water at 30s (30000ms), last 8s.
+    container.appendChild(card);
 
-    // 1. Posture (Immediate/Early check) - Let's put this early (e.g., 10s)
-    scheduleReminder(
-        { icon: "🧘", title: "Posture", text: "Correct your sitting position." },
-        10000, // Delay: 10 seconds
-        8000   // Duration: 8 seconds
-    );
+    setTimeout(() => {
+        if (!card.parentNode) return;
+        card.style.opacity = "0";
+        card.style.transform = "translateY(20px)";
+        setTimeout(() => card.remove(), 500);
+    }, durationMs);
+}
 
-    // 2. Water (The specific request: "after browser there for 30 seconds")
-    scheduleReminder(
-        { icon: "💧", title: "Stay Hydrated", text: "Water break time!" },
-        30000, // Delay: 30 seconds
-        8000   // Duration: 8 seconds ("after that 8 seconds it should vanish")
-    );
+// Returns whether it actually showed, so callers only reset their own clock
+// when the reminder really reached the user rather than hitting the cooldown.
+function fireReminder(key, data) {
+    const now = Date.now();
+    if (now - (lastReminderShownAt[key] || 0) < REMINDER_COOLDOWN_MS) return false;
+    lastReminderShownAt[key] = now;
+    showReminderCard(data);
+    return true;
+}
 
-    // 3. Eye Care (Late check) - Let's put this after water (e.g., 50s)
-    scheduleReminder(
-        { icon: "👀", title: "Eye Care", text: "Look at something 20ft away." },
-        50000, // Delay: 50 seconds
-        8000   // Duration: 8 seconds
-    );
+function startHydrationReminder() {
+    setInterval(() => {
+        fireReminder("water", {
+            icon: "💧",
+            title: "Stay Hydrated",
+            text: "It's been a while — time for a water break."
+        });
+    }, WATER_INTERVAL_MS);
 }
 
 // No interval for Apps/News to save bandwidth, only on load or reload
@@ -1975,7 +1983,7 @@ async function processFrame() {
         const data = await res.json();
         if (!faceScannerActive) return;
 
-        recordWellnessSample(data.state || "No Face", data.detected && data.using_phone);
+        recordWellnessSample(data.state || "No Face", data.detected && data.using_phone, data.posture);
 
         if (data.detected) {
             // Update UI with specific state
@@ -2210,6 +2218,24 @@ let wellnessLastBreakAt = null;
 let wellnessAwayStreak = 0;
 let wellnessSnoozedUntil = 0;
 
+// --- Posture ---
+// The camera reports raw head geometry, not a verdict. Those numbers are
+// meaningless in absolute terms: a tall person with a low webcam reads
+// completely differently from a short one with a high webcam. So the start of
+// every session is spent learning that individual's neutral, and a slouch is
+// only ever measured as drift away from their own baseline.
+const POSTURE_CALIBRATION_SAMPLES = 20;
+const POSTURE_NOSE_DROP = 0.055;  // head sunk this far down the frame
+const POSTURE_LEAN_RATIO = 1.16;  // face this much larger = leaned toward screen
+const POSTURE_TILT_DEGREES = 11;  // eye line rolled this far off neutral
+const POSTURE_SUSTAINED_MS = 45 * 1000;
+
+let postureBaseline = null;
+let postureCalibrationSamples = [];
+let postureBadStreakMs = 0;
+let postureIssue = null;
+let eyeBreakClockMs = 0;
+
 const BREAK_ACTIVITIES = {
     breathing: { label: "Breathing exercise", page: "breathing.html", blurb: "a couple of minutes of guided breathing" },
     neck: { label: "Neck & posture stretch", page: "neck.html", blurb: "a short guided neck routine" },
@@ -2221,31 +2247,108 @@ function resetWellnessSession() {
     wellnessSessionStart = null;
     wellnessLastBreakAt = null;
     wellnessAwayStreak = 0;
+    postureBaseline = null;
+    postureCalibrationSamples = [];
+    postureBadStreakMs = 0;
+    postureIssue = null;
+    eyeBreakClockMs = 0;
     hideWellnessNudge();
 }
 
-function recordWellnessSample(state, usingPhone) {
+// Median rather than mean: a couple of frames caught mid-stretch shouldn't
+// bake a bad reference posture into the whole session.
+function calibratePosture(posture) {
+    postureCalibrationSamples.push(posture);
+    if (postureCalibrationSamples.length < POSTURE_CALIBRATION_SAMPLES) return;
+
+    const median = (key) => {
+        const values = postureCalibrationSamples.map((p) => p[key]).sort((a, b) => a - b);
+        return values[Math.floor(values.length / 2)];
+    };
+    postureBaseline = {
+        noseY: median("nose_y"),
+        faceScale: median("face_scale"),
+        tilt: median("tilt")
+    };
+    postureCalibrationSamples = [];
+}
+
+function assessPosture(posture) {
+    if (!postureBaseline) return null;
+    if (posture.nose_y - postureBaseline.noseY > POSTURE_NOSE_DROP) return "slouching";
+    if (postureBaseline.faceScale > 0
+        && posture.face_scale / postureBaseline.faceScale > POSTURE_LEAN_RATIO) return "leaning in";
+    if (Math.abs(posture.tilt - postureBaseline.tilt) > POSTURE_TILT_DEGREES) return "head tilted";
+    return null;
+}
+
+function maybeFirePostureReminder() {
+    if (!postureIssue || postureBadStreakMs < POSTURE_SUSTAINED_MS) return;
+    const text = {
+        "slouching": "You've sunk down over the last minute — sit back up.",
+        "leaning in": "You've drifted closer to the screen. Ease back.",
+        "head tilted": "Your head's been tilted to one side. Level it out."
+    }[postureIssue];
+    // Deliberately does not reset the streak: fireReminder's cooldown already
+    // prevents re-nagging, and zeroing it here would under-report to the agent
+    // how long the user has actually been sitting badly.
+    fireReminder("posture", { icon: "🧘", title: "Posture", text });
+}
+
+// Real 20-20-20: counts only time the camera actually saw them at the desk,
+// and a genuine break away resets it. A blind 20-minute timer would fire
+// while the user was in the kitchen.
+function maybeFireEyeReminder() {
+    if (eyeBreakClockMs < EYE_BREAK_INTERVAL_MS) return;
+    const fired = fireReminder("eye", {
+        icon: "👀",
+        title: "Eye Care",
+        text: "20 minutes at the screen — look 20 feet away for 20 seconds."
+    });
+    if (fired) eyeBreakClockMs = 0;
+}
+
+function recordWellnessSample(state, usingPhone, posture) {
     const now = Date.now();
     if (wellnessSessionStart === null) wellnessSessionStart = now;
 
-    if (WELLNESS_ABSENT_STATES.has(state)) {
+    const away = WELLNESS_ABSENT_STATES.has(state);
+    if (away) {
         wellnessAwayStreak += WELLNESS_SAMPLE_MS;
-        if (wellnessAwayStreak >= WELLNESS_AWAY_IS_BREAK_MS) wellnessLastBreakAt = now;
+        if (wellnessAwayStreak >= WELLNESS_AWAY_IS_BREAK_MS) {
+            wellnessLastBreakAt = now;
+            // Away from the desk rests the eyes, and they may well sit back
+            // down differently - so the posture reference is no longer valid.
+            eyeBreakClockMs = 0;
+            postureBaseline = null;
+            postureCalibrationSamples = [];
+        }
     } else {
         wellnessAwayStreak = 0;
+        eyeBreakClockMs += WELLNESS_SAMPLE_MS;
     }
+
+    postureIssue = null;
+    if (posture && !away) {
+        if (postureBaseline) postureIssue = assessPosture(posture);
+        else calibratePosture(posture);
+    }
+    postureBadStreakMs = postureIssue ? postureBadStreakMs + WELLNESS_SAMPLE_MS : 0;
 
     wellnessSamples.push({
         t: now,
         state,
         strain: WELLNESS_STRAIN_STATES.has(state),
-        away: WELLNESS_ABSENT_STATES.has(state),
-        phone: Boolean(usingPhone)
+        away,
+        phone: Boolean(usingPhone),
+        posture: postureIssue
     });
 
     const cutoff = now - WELLNESS_WINDOW_MS;
     while (wellnessSamples.length && wellnessSamples[0].t < cutoff) wellnessSamples.shift();
 
+    maybeFirePostureReminder();
+    maybeFireEyeReminder();
     maybeNudgeForWellness();
 }
 
@@ -2310,6 +2413,8 @@ function getWellnessSnapshot() {
         strainStreakMinutes,
         dominantSignal,
         phoneMinutes: samplesToMinutes(wellnessSamples.filter((sample) => sample.phone).length),
+        posture: postureIssue,
+        postureMinutes: Math.round((postureBadStreakMs / 60000) * 10) / 10,
         level: gradeWellness({ observedMinutes, strainRatio, strainStreakMinutes, minutesSinceBreak })
     };
 }
@@ -2327,6 +2432,9 @@ function describeWellnessForModel(snapshot) {
     }
     if (snapshot.dominantSignal) parts.push(`most common signal: ${snapshot.dominantSignal}`);
     if (snapshot.phoneMinutes >= 1) parts.push(`${snapshot.phoneMinutes} min of phone use`);
+    if (snapshot.posture) {
+        parts.push(`posture: ${snapshot.posture} for ${snapshot.postureMinutes} min`);
+    }
     return parts.join("; ");
 }
 
@@ -2996,7 +3104,7 @@ document.addEventListener("keydown", (event) => {
 initializeSidebar();
 renderShortcuts();
 initOnboarding();
-showStartupReminders();
+startHydrationReminder();
 fetchData();
 setInterval(fetchData, 5000); // Keep checking backend status every 5 seconds
 setInterval(checkVolumeStatus, 5000); // Check volume every 5 seconds for maximum responsiveness

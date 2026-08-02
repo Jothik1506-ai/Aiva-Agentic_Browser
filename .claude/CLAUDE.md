@@ -153,6 +153,31 @@ Four things consume that snapshot:
 4. **Proactive nudge** — `#wellnessNudge` appears on sustained `high` strain
    outside any chat turn.
 
+### Reminders are camera-driven, not timers
+
+`showStartupReminders()` used to fire three blind `setTimeout`s at launch
+(posture 10s, water 30s, eye care 50s) whether or not the camera was on. That
+is gone. Now:
+
+- **Posture** — `/api/analyze_face` returns a `posture` block (`nose_y`,
+  `face_scale`, `tilt`) of raw normalized geometry with **no verdict**, because
+  absolute values are meaningless: a tall user with a low webcam reads nothing
+  like a short one with a high webcam. `calibratePosture()` takes the *median*
+  of the first 20 present samples as that person's neutral, and `assessPosture()`
+  reports drift from it as `slouching` / `leaning in` / `head tilted`. Fires
+  only after `POSTURE_SUSTAINED_MS` (45s) of unbroken bad posture, with a
+  10-minute cooldown. Leaving the desk drops the baseline — they will sit back
+  down differently.
+- **Eye care** — real 20-20-20: `eyeBreakClockMs` counts only time the camera
+  actually saw them, and a genuine break away resets it. A wall-clock timer
+  would fire while the user was in the kitchen.
+- **Water** — still a timer (45 min). No webcam detects thirst; pretending
+  otherwise would be dishonest.
+
+`maybeFirePostureReminder()` deliberately does **not** zero `postureBadStreakMs`
+when it fires — `fireReminder`'s cooldown already stops re-nagging, and zeroing
+it would under-report to the agent how long the user has really been slouching.
+
 Tuning invariants worth preserving (all covered by tests, see below):
 - `gradeWellness()` is deliberately conservative — a brief drowsy blip must
   never interrupt. `high` needs a 3-min unbroken streak or ≥50% of a ≥5-min
