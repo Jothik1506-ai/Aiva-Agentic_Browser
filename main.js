@@ -19,7 +19,7 @@ function getBackendDir() {
         : path.join(__dirname, "backend");
 }
 
-function warnBackendMissing(win) {
+function warnBackendMissing(win, detail) {
     if (backendStartupWarningShown) return;
     backendStartupWarningShown = true;
     dialog.showMessageBox(win, {
@@ -27,10 +27,21 @@ function warnBackendMissing(win) {
         title: "Python backend not found",
         message: "AIVA Agentic Browser needs Python 3.11 with the packages in requirements.txt " +
             "for the AI assistant, face scanner, and posture tracking to work. Browsing still " +
-            "works without it - install Python and restart the app to enable those features.",
+            "works without it - install Python and restart the app to enable those features." +
+            (detail ? `\n\nLast error: ${detail}` : ""),
         buttons: ["OK"]
     });
 }
+
+// A grace period, not a one-shot check: `python` on PATH can point at a venv
+// that starts fine but then dies a moment later on a missing import (e.g. a
+// stray venv without mediapipe installed). The old code treated the OS
+// successfully starting *any* process as final success and never tried the
+// next candidate in that case - so on a machine where `python` resolves to a
+// broken environment, the one interpreter that would have actually worked
+// (`py`) was never attempted. Only a clean exit after the grace window, or
+// staying up past it, counts as "this interpreter is fine."
+const PYTHON_STARTUP_GRACE_MS = 4000;
 
 // Beta note: this still shells out to a system Python interpreter rather
 // than a bundled/frozen one, so those features require the user's own
@@ -42,34 +53,46 @@ function startPythonServer(win) {
     tryLaunchPython(["python", "py"], scriptPath, win);
 }
 
-function tryLaunchPython(candidates, scriptPath, win) {
+function tryLaunchPython(candidates, scriptPath, win, lastError) {
     if (!candidates.length) {
         console.error("Python Error: no working Python interpreter found (tried: python, py).");
-        warnBackendMissing(win);
+        warnBackendMissing(win, lastError);
         return;
     }
     const [command, ...rest] = candidates;
     const child = spawn(command, [scriptPath]);
-    let launched = false;
+    const startedAt = Date.now();
+    let settledPastGrace = false;
     let fallbackTried = false;
-    const fallbackToNext = () => {
+    let lastStderr = "";
+
+    const fallbackToNext = (detail) => {
         if (fallbackTried) return;
         fallbackTried = true;
-        tryLaunchPython(rest, scriptPath, win);
+        tryLaunchPython(rest, scriptPath, win, detail || lastStderr || undefined);
     };
 
     child.on("spawn", () => {
-        launched = true;
         pythonProcess = child;
+        setTimeout(() => { settledPastGrace = true; }, PYTHON_STARTUP_GRACE_MS);
     });
     child.on("error", (err) => {
-        if (err.code === "ENOENT") fallbackToNext();
+        if (err.code === "ENOENT") fallbackToNext(`"${command}" is not on PATH.`);
         else console.error(`Python Error: ${err.message}`);
     });
     child.stdout.on("data", (data) => console.log(`Python: ${data}`));
-    child.stderr.on("data", (data) => console.error(`Python Error: ${data}`));
+    child.stderr.on("data", (data) => {
+        const text = data.toString();
+        lastStderr = text.trim().split("\n").pop() || lastStderr;
+        console.error(`Python Error: ${text}`);
+    });
     child.on("exit", (code) => {
-        if (!launched && code !== 0) fallbackToNext();
+        if (code === 0) return; // deliberate shutdown, not a startup failure
+        if (!settledPastGrace) {
+            fallbackToNext(lastStderr || `"${command}" exited with code ${code}.`);
+        } else {
+            console.error(`Python process ("${command}") exited unexpectedly after startup, code ${code}.`);
+        }
     });
 }
 
