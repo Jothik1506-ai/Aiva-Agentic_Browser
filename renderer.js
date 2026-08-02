@@ -2055,6 +2055,136 @@ toggleFaceScannerBtn.onclick = () => {
 
 window.addEventListener("beforeunload", stopFaceScanner);
 
+// ------------------- APP UPDATES -------------------
+// Updates are opt-in rather than silent: main.js asks before downloading
+// anything and never restarts the app on its own. If the user picks "Later"
+// we stay quiet for the rest of the day and ask again on their next calendar
+// day - hence the local (not UTC) date key.
+
+const UPDATE_SNOOZE_KEY = "aivaUpdateSnoozedFor";
+
+const updateBanner = document.getElementById("updateBanner");
+const updateBannerTitle = document.getElementById("updateBannerTitle");
+const updateBannerText = document.getElementById("updateBannerText");
+const updateBannerPrimary = document.getElementById("updateBannerPrimary");
+const updateBannerLater = document.getElementById("updateBannerLater");
+const updateProgressTrack = document.getElementById("updateProgressTrack");
+const updateProgressBar = document.getElementById("updateProgressBar");
+
+let pendingUpdateVersion = null;
+let updateStage = "idle"; // idle | available | downloading | ready
+
+function updateTodayKey() {
+    const now = new Date();
+    return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+}
+
+function isUpdateSnoozedToday(version) {
+    try {
+        const saved = JSON.parse(localStorage.getItem(UPDATE_SNOOZE_KEY) || "null");
+        return Boolean(saved) && saved.version === version && saved.date === updateTodayKey();
+    } catch (error) {
+        return false;
+    }
+}
+
+function snoozeUpdateForToday(version) {
+    try {
+        localStorage.setItem(UPDATE_SNOOZE_KEY, JSON.stringify({ version, date: updateTodayKey() }));
+    } catch (error) {
+        console.warn("Could not save the update reminder preference:", error);
+    }
+}
+
+function hideUpdateBanner() {
+    if (updateBanner) updateBanner.classList.add("hidden");
+}
+
+function showUpdateAvailable(version) {
+    if (!updateBanner) return;
+    pendingUpdateVersion = version;
+    updateStage = "available";
+    updateBannerTitle.textContent = "Update available";
+    updateBannerText.textContent = `Version ${version} is ready to download.`;
+    updateProgressTrack.classList.add("hidden");
+    updateBannerPrimary.textContent = "Download";
+    updateBannerPrimary.disabled = false;
+    updateBannerLater.classList.remove("hidden");
+    updateBanner.classList.remove("hidden");
+}
+
+function showUpdateDownloading() {
+    updateStage = "downloading";
+    updateBannerTitle.textContent = "Downloading update";
+    updateBannerText.textContent = `Version ${pendingUpdateVersion} — you can keep working.`;
+    updateProgressBar.style.width = "0%";
+    updateProgressTrack.classList.remove("hidden");
+    updateBannerPrimary.textContent = "Downloading…";
+    updateBannerPrimary.disabled = true;
+    // No "Later" mid-download: stopping isn't something main.js can honour.
+    updateBannerLater.classList.add("hidden");
+}
+
+function showUpdateReady(version) {
+    if (!updateBanner) return;
+    pendingUpdateVersion = version || pendingUpdateVersion;
+    updateStage = "ready";
+    updateBannerTitle.textContent = "Update ready";
+    updateBannerText.textContent =
+        `Version ${pendingUpdateVersion} installs when the app restarts. Your tabs reopen afterwards.`;
+    updateProgressTrack.classList.add("hidden");
+    updateBannerPrimary.textContent = "Restart now";
+    updateBannerPrimary.disabled = false;
+    updateBannerLater.classList.remove("hidden");
+    updateBanner.classList.remove("hidden");
+}
+
+function showUpdateError(message) {
+    if (!updateBanner || updateStage === "idle") return;
+    updateStage = "available";
+    updateBannerTitle.textContent = "Update failed";
+    updateBannerText.textContent = `${message || "The download did not finish."} You can try again.`;
+    updateProgressTrack.classList.add("hidden");
+    updateBannerPrimary.textContent = "Try again";
+    updateBannerPrimary.disabled = false;
+    updateBannerLater.classList.remove("hidden");
+    updateBanner.classList.remove("hidden");
+}
+
+if (updateBanner) {
+    updateBannerPrimary.onclick = () => {
+        if (updateStage === "ready") {
+            ipcRenderer.send("update-install");
+            return;
+        }
+        ipcRenderer.send("update-download");
+        showUpdateDownloading();
+    };
+
+    const dismissUpdate = () => {
+        // Once downloaded it installs on quit regardless, so dismissing is only
+        // declining the restart - nothing is lost by hiding the prompt.
+        if (updateStage !== "ready" && pendingUpdateVersion) snoozeUpdateForToday(pendingUpdateVersion);
+        hideUpdateBanner();
+    };
+    updateBannerLater.onclick = dismissUpdate;
+    document.getElementById("updateBannerClose").onclick = dismissUpdate;
+
+    ipcRenderer.on("update-available", (_event, info) => {
+        if (!info || !info.version) return;
+        if (isUpdateSnoozedToday(info.version)) return;
+        showUpdateAvailable(info.version);
+    });
+    ipcRenderer.on("update-download-progress", (_event, progress) => {
+        if (updateStage !== "downloading") return;
+        const percent = Math.max(0, Math.min(100, (progress && progress.percent) || 0));
+        updateProgressBar.style.width = `${percent}%`;
+        updateBannerText.textContent = `Version ${pendingUpdateVersion} — ${percent}% downloaded.`;
+    });
+    ipcRenderer.on("update-downloaded", (_event, info) => showUpdateReady(info && info.version));
+    ipcRenderer.on("update-error", (_event, info) => showUpdateError(info && info.message));
+}
+
 // ------------------- WELLNESS-AWARE AGENT -------------------
 // The face scanner already reads the user's state once a second, but that read
 // used to only paint a status line and then vanish. This is what makes Aiva

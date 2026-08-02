@@ -6,6 +6,7 @@ const { autoUpdater } = require("electron-updater");
 
 let pythonProcess = null;
 let cursorPollInterval = null;
+let updateCheckInterval = null;
 let backendStartupWarningShown = false;
 
 // In a packaged build, __dirname points inside app.asar - the backend can't
@@ -72,10 +73,15 @@ function tryLaunchPython(candidates, scriptPath, win) {
     });
 }
 
-// Checked once per launch (not aggressively polled) against the GitHub
-// Releases feed electron-builder writes into every build's latest.yml.
-// Downloads happen silently in the background; the update installs
-// automatically the next time the user quits the app.
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+// Checked against the GitHub Releases feed electron-builder writes into every
+// build's latest.yml: once at startup, then daily for sessions left running.
+//
+// The user is asked before anything is downloaded (autoDownload = false), so
+// nothing large moves over their connection unprompted and the restart is
+// always their choice. autoInstallOnAppQuit stays on as the safety net: if
+// they download and then just close the app, it still lands.
 //
 // Do NOT set autoUpdater.channel here. It is not "which .yml feed to read" -
 // it is the *prerelease channel name* (alpha/beta/...), matched against the
@@ -84,15 +90,54 @@ function tryLaunchPython(candidates, scriptPath, win) {
 // "No published versions on GitHub". Left unset, electron-updater derives the
 // channel from the running version: a 0.1.0-beta.2 build looks for newer beta
 // *and* stable releases, and a stable build only takes stable ones.
-function initAutoUpdate() {
+function initAutoUpdate(win) {
     if (!app.isPackaged) return; // dev runs aren't a real release to check against
+
+    const send = (channel, payload) => {
+        if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+        win.webContents.send(channel, payload);
+    };
+
     try {
-        autoUpdater.autoDownload = true;
+        autoUpdater.autoDownload = false;
         autoUpdater.autoInstallOnAppQuit = true;
-        autoUpdater.on("error", (err) => console.error("AutoUpdater error:", err == null ? err : err.message));
-        autoUpdater.on("update-available", (info) => console.log("Update available:", info.version));
-        autoUpdater.on("update-downloaded", (info) => console.log("Update downloaded, installs on quit:", info.version));
-        autoUpdater.checkForUpdatesAndNotify().catch((err) => console.error("AutoUpdater check failed:", err.message));
+
+        autoUpdater.on("error", (err) => {
+            const message = err == null ? "Unknown updater error" : err.message;
+            console.error("AutoUpdater error:", message);
+            send("update-error", { message });
+        });
+        autoUpdater.on("update-available", (info) => {
+            console.log("Update available:", info.version);
+            send("update-available", { version: info.version, releaseDate: info.releaseDate || null });
+        });
+        autoUpdater.on("download-progress", (progress) => {
+            send("update-download-progress", { percent: Math.round(progress.percent || 0) });
+        });
+        autoUpdater.on("update-downloaded", (info) => {
+            console.log("Update downloaded:", info.version);
+            send("update-downloaded", { version: info.version });
+        });
+
+        ipcMain.on("update-download", () => {
+            autoUpdater.downloadUpdate().catch((err) => {
+                console.error("Update download failed:", err.message);
+                send("update-error", { message: err.message });
+            });
+        });
+        // Let the IPC call return before the app tears itself down, otherwise
+        // quitAndInstall can race the renderer still finishing this tick.
+        ipcMain.on("update-install", () => {
+            setImmediate(() => autoUpdater.quitAndInstall());
+        });
+
+        const check = () => autoUpdater.checkForUpdates().catch((err) => {
+            console.error("AutoUpdater check failed:", err.message);
+        });
+
+        // The renderer owns the prompt, so don't check until it can receive it.
+        win.webContents.once("did-finish-load", check);
+        updateCheckInterval = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
     } catch (err) {
         console.error("AutoUpdater setup failed:", err.message);
     }
@@ -115,7 +160,7 @@ function createWindow() {
 
     win.loadFile("index.html");
     startPythonServer(win);
-    initAutoUpdate();
+    initAutoUpdate(win);
 
     // Custom top bar replaces the native title bar, so the renderer needs
     // IPC hooks for the window controls it now draws itself, and needs to
@@ -149,6 +194,10 @@ function createWindow() {
         if (cursorPollInterval) {
             clearInterval(cursorPollInterval);
             cursorPollInterval = null;
+        }
+        if (updateCheckInterval) {
+            clearInterval(updateCheckInterval);
+            updateCheckInterval = null;
         }
     });
 

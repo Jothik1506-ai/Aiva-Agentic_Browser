@@ -2050,6 +2050,108 @@ body.focusModeActive #customizeBtn {
   font-size: 11.5px;
 }
 
+/* Update prompt. Top-right, clear of the wellness nudge at bottom-right. */
+.updateBanner {
+  position: fixed;
+  top: 58px;
+  right: 25px;
+  z-index: 1700;
+  width: 320px;
+  padding: 13px 15px;
+  border: 1px solid rgba(98, 71, 170, 0.45);
+  border-radius: 14px;
+  background: rgba(18, 24, 21, 0.92);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+}
+
+.updateBannerHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.updateBannerIcon {
+  color: #7fc8a9;
+  font-size: 13px;
+}
+
+.updateBannerClose {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.updateBannerClose:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.updateBannerText {
+  margin: 9px 0 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.updateProgressTrack {
+  height: 5px;
+  margin-top: 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.updateProgressBar {
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7fc8a9 0%, #6247aa 100%);
+  transition: width 0.25s ease;
+}
+
+.updateBannerActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.updateBannerActions button {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.updateBannerActions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.updateBannerActions button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.updateBannerActions .updateBannerPrimaryBtn {
+  border-color: transparent;
+  background: linear-gradient(135deg, #7fc8a9 0%, #6247aa 100%);
+  color: #0e1512;
+}
+
 /* Proactive nudge - sits above the floating chat trigger so it reads as Aiva
    speaking up, not as another system toast in the top-right stack. */
 .wellnessNudge {

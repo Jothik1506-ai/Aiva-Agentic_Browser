@@ -100,6 +100,31 @@ Backend validates replayed `tool_history` against `BROWSER_TOOL_NAMES` and caps
 both history length and per-result size before rebuilding the OpenAI message
 array.
 
+## Auto-update UX
+
+Updates are **opt-in, not silent**. `initAutoUpdate(win)` in `main.js` sets
+`autoDownload = false` and drives a renderer prompt (`#updateBanner`) over IPC:
+
+| Direction | Channel | Meaning |
+|---|---|---|
+| main → renderer | `update-available` | `{version}` — show the prompt |
+| main → renderer | `update-download-progress` | `{percent}` |
+| main → renderer | `update-downloaded` | `{version}` — offer restart |
+| main → renderer | `update-error` | `{message}` |
+| renderer → main | `update-download` | user clicked Download |
+| renderer → main | `update-install` | user clicked Restart now |
+
+Checks run at `did-finish-load` (not earlier — the renderer owns the prompt and
+would miss an event fired before it loads) and then every 24h for long-running
+sessions. "Later" writes `aivaUpdateSnoozedFor` = `{version, date}` using a
+**local** (not UTC) date key, so the prompt returns on the user's next calendar
+day; a different version ignores the snooze. `autoInstallOnAppQuit` stays true
+as a safety net for a downloaded-but-not-restarted update.
+
+Note for whoever ships the next release: users on a build *older* than the one
+that introduced this banner get that update through the old silent path — they
+only start seeing the prompt from the release *after* the one that adds it.
+
 ## The wellness-aware agent (the product differentiator)
 
 Every other agentic browser reads the *page*. Aiva also reads the *person*, and

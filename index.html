@@ -349,6 +349,24 @@
         </div>
     </div>
 
+    <!-- Update prompt. Top-level so it shows over an active webview tab, and
+         top-right so it never fights the wellness nudge at bottom-right. -->
+    <div id="updateBanner" class="updateBanner hidden" role="status" aria-live="polite">
+        <div class="updateBannerHead">
+            <span class="updateBannerIcon">⬆</span>
+            <span id="updateBannerTitle">Update available</span>
+            <button id="updateBannerClose" class="updateBannerClose" title="Dismiss">✕</button>
+        </div>
+        <p id="updateBannerText" class="updateBannerText"></p>
+        <div id="updateProgressTrack" class="updateProgressTrack hidden">
+            <div id="updateProgressBar" class="updateProgressBar"></div>
+        </div>
+        <div id="updateBannerActions" class="updateBannerActions">
+            <button id="updateBannerPrimary" type="button" class="updateBannerPrimaryBtn">Download</button>
+            <button id="updateBannerLater" type="button">Later</button>
+        </div>
+    </div>
+
     <!-- AI CHAT TRIGGER (Floating) -->
     <button id="aiChatBtn" class="aiChatTrigger">🤖</button>
 
