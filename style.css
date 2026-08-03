@@ -996,6 +996,7 @@ body.sidebarCollapsed.sidebarHoverExpanded .browserSidebar {
   /* Capped rather than 80% of the viewport: a full-width pill on a wide
      window leaves the caret stranded far from the placeholder text. */
   max-width: 620px;
+  position: relative;
   display: flex;
   align-items: center;
   background: rgba(18, 24, 21, 0.62);
@@ -1022,6 +1023,40 @@ body.sidebarCollapsed.sidebarHoverExpanded .browserSidebar {
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42),
     0 0 0 3px color-mix(in srgb, var(--accent-color) 18%, transparent);
   transform: translateY(-1px);
+}
+
+.searchSuggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 24, 21, 0.94);
+  backdrop-filter: blur(22px) saturate(140%);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+}
+
+.searchSuggestionItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 22px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.searchSuggestionItem .suggestIcon {
+  opacity: 0.45;
+  font-size: 13px;
+}
+
+.searchSuggestionItem:hover,
+.searchSuggestionItem.active {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .g-logo {

@@ -1368,9 +1368,121 @@ if (breathingStartBtn) {
     });
 }
 
+// ------------------- Home Page Search Suggestions -------------------
+// Proxied through our own backend (/api/suggest) rather than calling
+// Google's endpoint directly from the renderer, so this is a same-origin
+// fetch from the app's point of view and never fights CORS on a file://
+// page. Only fires while typing on the dashboard search box - the top
+// urlBar (used while browsing) intentionally does not get this.
+const searchSuggestionsBox = document.getElementById("searchSuggestions");
+const SUGGEST_DEBOUNCE_MS = 180;
+const SUGGEST_MIN_CHARS = 2;
+
+let suggestDebounceTimer = null;
+let suggestController = null;
+let currentSuggestions = [];
+let activeSuggestionIndex = -1;
+
+function hideSuggestions() {
+    if (!searchSuggestionsBox) return;
+    searchSuggestionsBox.classList.add("hidden");
+    searchSuggestionsBox.innerHTML = "";
+    currentSuggestions = [];
+    activeSuggestionIndex = -1;
+}
+
+function renderSuggestions(list) {
+    if (!searchSuggestionsBox) return;
+    currentSuggestions = list;
+    activeSuggestionIndex = -1;
+
+    if (!list.length) {
+        hideSuggestions();
+        return;
+    }
+
+    searchSuggestionsBox.innerHTML = "";
+    list.forEach((text) => {
+        const item = document.createElement("div");
+        item.className = "searchSuggestionItem";
+
+        const icon = document.createElement("span");
+        icon.className = "suggestIcon";
+        icon.textContent = "🔍";
+
+        const label = document.createElement("span");
+        label.textContent = text;
+
+        item.append(icon, label);
+        // mousedown (not click) fires before the input's blur handler would
+        // otherwise hide this box first and swallow the selection.
+        item.onmousedown = (e) => {
+            e.preventDefault();
+            searchInput.value = text;
+            hideSuggestions();
+            navigate(text);
+        };
+
+        searchSuggestionsBox.appendChild(item);
+    });
+    searchSuggestionsBox.classList.remove("hidden");
+}
+
+function highlightSuggestion(index) {
+    const items = searchSuggestionsBox.querySelectorAll(".searchSuggestionItem");
+    items.forEach((el, i) => el.classList.toggle("active", i === index));
+    activeSuggestionIndex = index;
+    if (index >= 0) searchInput.value = currentSuggestions[index];
+}
+
+async function fetchSuggestions(query) {
+    if (suggestController) suggestController.abort();
+    suggestController = new AbortController();
+    try {
+        const res = await fetch(`${BACKEND_URL}/suggest?q=${encodeURIComponent(query)}`, {
+            signal: suggestController.signal
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        // The user may have kept typing while this was in flight - a stale
+        // response arriving late must not clobber what's on screen now.
+        if (searchInput.value.trim() === query) renderSuggestions(data.suggestions || []);
+    } catch (error) {
+        if (error.name !== "AbortError") hideSuggestions();
+    }
+}
+
+searchInput.addEventListener("input", () => {
+    const query = searchInput.value.trim();
+    clearTimeout(suggestDebounceTimer);
+    if (query.length < SUGGEST_MIN_CHARS) {
+        hideSuggestions();
+        return;
+    }
+    suggestDebounceTimer = setTimeout(() => fetchSuggestions(query), SUGGEST_DEBOUNCE_MS);
+});
+
+searchInput.addEventListener("blur", () => {
+    // Deferred so a suggestion's mousedown handler still sees the box open.
+    setTimeout(hideSuggestions, 100);
+});
+
+document.addEventListener("click", (e) => {
+    if (!e.target.closest(".searchContainer")) hideSuggestions();
+});
+
 // Main Search Input
 searchInput.onkeydown = (e) => {
-    if (e.key === "Enter") {
+    if (e.key === "ArrowDown" && currentSuggestions.length) {
+        e.preventDefault();
+        highlightSuggestion((activeSuggestionIndex + 1) % currentSuggestions.length);
+    } else if (e.key === "ArrowUp" && currentSuggestions.length) {
+        e.preventDefault();
+        highlightSuggestion((activeSuggestionIndex - 1 + currentSuggestions.length) % currentSuggestions.length);
+    } else if (e.key === "Escape") {
+        hideSuggestions();
+    } else if (e.key === "Enter") {
+        hideSuggestions();
         navigate(searchInput.value);
     }
 }

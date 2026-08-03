@@ -17,6 +17,8 @@ from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 from comtypes import CLSCTX_ALL
 import time
 import math
+import urllib.request
+import urllib.parse
 
 # Load .env from parent directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -204,6 +206,30 @@ def resolve_url(req: ResolveRequest):
         url = f"https://www.google.com/search?q={q}"
         
     return {"url": url}
+
+# Proxied server-side rather than called directly from the renderer so the
+# request goes through our own CORS-open backend instead of the renderer
+# hitting a third-party endpoint from a file:// origin. Firefox's client id
+# returns plain JSON (no JSONP wrapper), which is why it's used here instead
+# of client=chrome.
+SUGGEST_TIMEOUT_S = 3
+MAX_SUGGESTIONS = 8
+
+@app.get("/api/suggest")
+def search_suggest(q: str = ""):
+    q = q.strip()
+    if len(q) < 2:
+        return {"suggestions": []}
+    try:
+        url = "https://suggestqueries.google.com/complete/search?client=firefox&q=" + urllib.parse.quote(q)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=SUGGEST_TIMEOUT_S) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        suggestions = data[1] if isinstance(data, list) and len(data) > 1 else []
+        return {"suggestions": [str(s) for s in suggestions[:MAX_SUGGESTIONS]]}
+    except Exception as e:
+        print(f"DEBUG: Suggest error: {e}")
+        return {"suggestions": []}
 
 @app.post("/api/face_auth")
 def face_auth(req: ImageRequest = Body(...)):
