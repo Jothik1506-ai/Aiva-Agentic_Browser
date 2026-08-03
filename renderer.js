@@ -2473,7 +2473,18 @@ function addBreakCard(activityKey, reason) {
     startBtn.textContent = `Start ${activity.label.toLowerCase()}`;
     startBtn.onclick = () => {
         markBreakTaken();
-        window.location.href = activity.page;
+        // neck.html runs its own separate MediaPipe camera. Windows webcams
+        // are exclusive-access, so navigating there while the Face Scanner
+        // still holds the device races the driver's teardown and can throw
+        // "NotReadableError: Could not start video source" on the very next
+        // getUserMedia call. Stop first and give the driver a moment to
+        // actually let go before asking for it again.
+        if (activityKey === "neck" && faceScannerActive) {
+            stopFaceScanner();
+            setTimeout(() => { window.location.href = activity.page; }, 350);
+        } else {
+            window.location.href = activity.page;
+        }
     };
 
     const laterBtn = document.createElement("button");

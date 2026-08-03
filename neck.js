@@ -117,6 +117,20 @@ camera.start().catch(err => {
     instructionText.innerText = "Camera permission denied or not available.";
 });
 
+// Without this the camera can stay held by this page's MediaStream until the
+// document is fully torn down, which is exactly the exclusive-lock race that
+// makes the next getUserMedia call (back on the main scanner, or a re-visit
+// of this exercise) fail with NotReadableError. Release it the moment the
+// user navigates away, not whenever the browser gets around to it.
+function releaseCamera() {
+    try { camera.stop(); } catch (err) { /* already stopped */ }
+    if (videoElement.srcObject) {
+        videoElement.srcObject.getTracks().forEach((track) => track.stop());
+        videoElement.srcObject = null;
+    }
+}
+window.addEventListener("beforeunload", releaseCamera);
+
 function onResults(results) {
     // Draw Camera Feed
     canvasCtx.save();

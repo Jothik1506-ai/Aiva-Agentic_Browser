@@ -8,6 +8,25 @@ let pythonProcess = null;
 let cursorPollInterval = null;
 let updateCheckInterval = null;
 let backendStartupWarningShown = false;
+let mainWindow = null;
+
+// Without this, a double-click on the desktop icon, an auto-launch entry plus
+// a manual start, or a crashed-but-still-running previous window all leave
+// two+ copies of this app alive at once. Each one runs its own Face Scanner,
+// and Windows webcams are exclusive-access: whichever instance grabs the
+// camera second gets "NotReadableError: Could not start video source." This
+// is the most likely cause of camera failures that aren't reproducible from
+// a single, deliberately-launched copy of the app.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+    app.quit();
+} else {
+    app.on("second-instance", () => {
+        if (!mainWindow) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+    });
+}
 
 // In a packaged build, __dirname points inside app.asar - the backend can't
 // run its server.py or read its model files from in there, so it ships as
@@ -180,6 +199,7 @@ function createWindow() {
             webviewTag: true // Enabled for internal browsing
         },
     });
+    mainWindow = win;
 
     win.loadFile("index.html");
     startPythonServer(win);
@@ -246,7 +266,9 @@ function createWindow() {
     });
 }
 
-app.whenReady().then(createWindow);
+if (gotSingleInstanceLock) {
+    app.whenReady().then(createWindow);
+}
 
 app.on("window-all-closed", () => {
     if (pythonProcess) pythonProcess.kill();
