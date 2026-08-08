@@ -1002,6 +1002,7 @@ body.sidebarCollapsed.sidebarHoverExpanded .browserSidebar {
   /* Capped rather than 80% of the viewport: a full-width pill on a wide
      window leaves the caret stranded far from the placeholder text. */
   max-width: 620px;
+  position: relative;
   display: flex;
   align-items: center;
   background: rgba(18, 24, 21, 0.62);
@@ -1028,6 +1029,40 @@ body.sidebarCollapsed.sidebarHoverExpanded .browserSidebar {
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42),
     0 0 0 3px color-mix(in srgb, var(--accent-color) 18%, transparent);
   transform: translateY(-1px);
+}
+
+.searchSuggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(18, 24, 21, 0.94);
+  backdrop-filter: blur(22px) saturate(140%);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+}
+
+.searchSuggestionItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 22px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.searchSuggestionItem .suggestIcon {
+  opacity: 0.45;
+  font-size: 13px;
+}
+
+.searchSuggestionItem:hover,
+.searchSuggestionItem.active {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .g-logo {
@@ -1989,6 +2024,250 @@ body.focusModeActive #customizeBtn {
   background: rgba(127, 200, 169, 0.08);
   color: rgba(255, 255, 255, 0.72);
   font-size: 11px;
+}
+
+/* Break offers and mid-run check-ins. Deliberately calmer than .phoneWarning -
+   these are an offer from Aiva, not an alarm, so they must not read as an
+   error state the user has to clear. */
+.wellnessCard {
+  align-self: stretch;
+  margin: 6px 0 6px 40px;
+  padding: 11px 13px;
+  border: 1px solid rgba(127, 200, 169, 0.28);
+  border-left: 3px solid #7fc8a9;
+  border-radius: 11px;
+  background: rgba(127, 200, 169, 0.09);
+}
+
+.wellnessCheckpoint {
+  border-color: rgba(255, 187, 51, 0.32);
+  border-left-color: #ffbb33;
+  background: rgba(255, 187, 51, 0.08);
+}
+
+.wellnessCardText {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.wellnessCardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.wellnessCardActions button {
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.wellnessCardActions button:hover {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.wellnessCardActions .wellnessCardPrimary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #7fc8a9 0%, #6247aa 100%);
+  color: #0e1512;
+}
+
+.wellnessCardActions .wellnessCardPrimary:hover {
+  filter: brightness(1.08);
+}
+
+.wellnessCardDismissed {
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11.5px;
+}
+
+/* Update prompt. Top-right, clear of the wellness nudge at bottom-right. */
+.updateBanner {
+  position: fixed;
+  top: 58px;
+  right: 25px;
+  z-index: 1700;
+  width: 320px;
+  padding: 13px 15px;
+  border: 1px solid rgba(98, 71, 170, 0.45);
+  border-radius: 14px;
+  background: rgba(18, 24, 21, 0.92);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+}
+
+.updateBannerHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.updateBannerIcon {
+  color: #7fc8a9;
+  font-size: 13px;
+}
+
+.updateBannerClose {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.updateBannerClose:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.updateBannerText {
+  margin: 9px 0 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.updateProgressTrack {
+  height: 5px;
+  margin-top: 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.updateProgressBar {
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7fc8a9 0%, #6247aa 100%);
+  transition: width 0.25s ease;
+}
+
+.updateBannerActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.updateBannerActions button {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.updateBannerActions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.updateBannerActions button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.updateBannerActions .updateBannerPrimaryBtn {
+  border-color: transparent;
+  background: linear-gradient(135deg, #7fc8a9 0%, #6247aa 100%);
+  color: #0e1512;
+}
+
+/* Proactive nudge - sits above the floating chat trigger so it reads as Aiva
+   speaking up, not as another system toast in the top-right stack. */
+.wellnessNudge {
+  position: fixed;
+  right: 25px;
+  bottom: 96px;
+  z-index: 1600;
+  width: 296px;
+  padding: 13px 15px;
+  border: 1px solid rgba(127, 200, 169, 0.32);
+  border-radius: 14px;
+  background: rgba(18, 24, 21, 0.9);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+}
+
+.wellnessNudgeHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.wellnessNudgeClose {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wellnessNudgeClose:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.wellnessNudgeText {
+  margin: 9px 0 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.wellnessNudgeActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.wellnessNudgeActions button {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.wellnessNudgeActions button:hover {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.wellnessNudgeActions .wellnessNudgePrimary {
+  border-color: transparent;
+  background: linear-gradient(135deg, #7fc8a9 0%, #6247aa 100%);
+  color: #0e1512;
 }
 
 .userMessage .messageText {

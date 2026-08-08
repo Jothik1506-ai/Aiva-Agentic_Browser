@@ -203,6 +203,7 @@
                         </svg>
                     </button>
                 </div>
+                <div id="searchSuggestions" class="searchSuggestions hidden"></div>
             </div>
 
             <!-- Quick Apps -->
@@ -354,8 +355,42 @@
         </div>
     </div>
 
+    <!-- Update prompt. Top-level so it shows over an active webview tab, and
+         top-right so it never fights the wellness nudge at bottom-right. -->
+    <div id="updateBanner" class="updateBanner hidden" role="status" aria-live="polite">
+        <div class="updateBannerHead">
+            <span class="updateBannerIcon">⬆</span>
+            <span id="updateBannerTitle">Update available</span>
+            <button id="updateBannerClose" class="updateBannerClose" title="Dismiss">✕</button>
+        </div>
+        <p id="updateBannerText" class="updateBannerText"></p>
+        <div id="updateProgressTrack" class="updateProgressTrack hidden">
+            <div id="updateProgressBar" class="updateProgressBar"></div>
+        </div>
+        <div id="updateBannerActions" class="updateBannerActions">
+            <button id="updateBannerPrimary" type="button" class="updateBannerPrimaryBtn">Download</button>
+            <button id="updateBannerLater" type="button">Later</button>
+        </div>
+    </div>
+
     <!-- AI CHAT TRIGGER (Floating) -->
     <button id="aiChatBtn" class="aiChatTrigger">🤖</button>
+
+    <!-- Aiva noticing sustained strain on its own, outside any chat turn. Sits
+         outside #dashboard so it stays visible while a webview tab is active -
+         that is exactly when someone has been staring at a screen the longest. -->
+    <div id="wellnessNudge" class="wellnessNudge hidden" role="status" aria-live="polite">
+        <div class="wellnessNudgeHead">
+            <span class="aiIcon">🤖</span>
+            <span>Aiva noticed</span>
+            <button id="wellnessNudgeClose" class="wellnessNudgeClose" title="Dismiss">✕</button>
+        </div>
+        <p id="wellnessNudgeText" class="wellnessNudgeText"></p>
+        <div class="wellnessNudgeActions">
+            <button id="wellnessNudgeBreak" type="button" class="wellnessNudgePrimary">Take a break</button>
+            <button id="wellnessNudgeSnooze" type="button">Not now</button>
+        </div>
+    </div>
 
     <!-- AI CHATBOT PANEL -->
     <div id="aiChatPanel" class="aiChatPanel hidden">

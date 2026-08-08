@@ -1380,9 +1380,121 @@ if (breathingStartBtn) {
     });
 }
 
+// ------------------- Home Page Search Suggestions -------------------
+// Proxied through our own backend (/api/suggest) rather than calling
+// Google's endpoint directly from the renderer, so this is a same-origin
+// fetch from the app's point of view and never fights CORS on a file://
+// page. Only fires while typing on the dashboard search box - the top
+// urlBar (used while browsing) intentionally does not get this.
+const searchSuggestionsBox = document.getElementById("searchSuggestions");
+const SUGGEST_DEBOUNCE_MS = 180;
+const SUGGEST_MIN_CHARS = 2;
+
+let suggestDebounceTimer = null;
+let suggestController = null;
+let currentSuggestions = [];
+let activeSuggestionIndex = -1;
+
+function hideSuggestions() {
+    if (!searchSuggestionsBox) return;
+    searchSuggestionsBox.classList.add("hidden");
+    searchSuggestionsBox.innerHTML = "";
+    currentSuggestions = [];
+    activeSuggestionIndex = -1;
+}
+
+function renderSuggestions(list) {
+    if (!searchSuggestionsBox) return;
+    currentSuggestions = list;
+    activeSuggestionIndex = -1;
+
+    if (!list.length) {
+        hideSuggestions();
+        return;
+    }
+
+    searchSuggestionsBox.innerHTML = "";
+    list.forEach((text) => {
+        const item = document.createElement("div");
+        item.className = "searchSuggestionItem";
+
+        const icon = document.createElement("span");
+        icon.className = "suggestIcon";
+        icon.textContent = "🔍";
+
+        const label = document.createElement("span");
+        label.textContent = text;
+
+        item.append(icon, label);
+        // mousedown (not click) fires before the input's blur handler would
+        // otherwise hide this box first and swallow the selection.
+        item.onmousedown = (e) => {
+            e.preventDefault();
+            searchInput.value = text;
+            hideSuggestions();
+            navigate(text);
+        };
+
+        searchSuggestionsBox.appendChild(item);
+    });
+    searchSuggestionsBox.classList.remove("hidden");
+}
+
+function highlightSuggestion(index) {
+    const items = searchSuggestionsBox.querySelectorAll(".searchSuggestionItem");
+    items.forEach((el, i) => el.classList.toggle("active", i === index));
+    activeSuggestionIndex = index;
+    if (index >= 0) searchInput.value = currentSuggestions[index];
+}
+
+async function fetchSuggestions(query) {
+    if (suggestController) suggestController.abort();
+    suggestController = new AbortController();
+    try {
+        const res = await fetch(`${BACKEND_URL}/suggest?q=${encodeURIComponent(query)}`, {
+            signal: suggestController.signal
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        // The user may have kept typing while this was in flight - a stale
+        // response arriving late must not clobber what's on screen now.
+        if (searchInput.value.trim() === query) renderSuggestions(data.suggestions || []);
+    } catch (error) {
+        if (error.name !== "AbortError") hideSuggestions();
+    }
+}
+
+searchInput.addEventListener("input", () => {
+    const query = searchInput.value.trim();
+    clearTimeout(suggestDebounceTimer);
+    if (query.length < SUGGEST_MIN_CHARS) {
+        hideSuggestions();
+        return;
+    }
+    suggestDebounceTimer = setTimeout(() => fetchSuggestions(query), SUGGEST_DEBOUNCE_MS);
+});
+
+searchInput.addEventListener("blur", () => {
+    // Deferred so a suggestion's mousedown handler still sees the box open.
+    setTimeout(hideSuggestions, 100);
+});
+
+document.addEventListener("click", (e) => {
+    if (!e.target.closest(".searchContainer")) hideSuggestions();
+});
+
 // Main Search Input
 searchInput.onkeydown = (e) => {
-    if (e.key === "Enter") {
+    if (e.key === "ArrowDown" && currentSuggestions.length) {
+        e.preventDefault();
+        highlightSuggestion((activeSuggestionIndex + 1) % currentSuggestions.length);
+    } else if (e.key === "ArrowUp" && currentSuggestions.length) {
+        e.preventDefault();
+        highlightSuggestion((activeSuggestionIndex - 1 + currentSuggestions.length) % currentSuggestions.length);
+    } else if (e.key === "Escape") {
+        hideSuggestions();
+    } else if (e.key === "Enter") {
+        hideSuggestions();
         navigate(searchInput.value);
     }
 }
@@ -1780,71 +1892,79 @@ function showVolumeWarning(volume) {
     }, 10000);
 }
 
-// ------------------- Startup Reminders -------------------
-function showStartupReminders() {
+// ------------------- Wellness Reminders -------------------
+// These were three blind setTimeouts fired once at startup - posture at 10s,
+// water at 30s, eye care at 50s - regardless of whether the camera was even on.
+// Telling someone to fix their posture without having looked at them is both
+// useless and the fastest way to get every reminder in the app ignored.
+//
+// Posture and eye care are now driven by what the camera actually sees, and
+// stay silent when the scanner is off because there is nothing to see. Water
+// is still a timer: no webcam can detect thirst, and pretending otherwise
+// would be dishonest. Its interval is now a realistic 45 minutes.
+
+const REMINDER_COOLDOWN_MS = 10 * 60 * 1000;
+const REMINDER_DURATION_MS = 8000;
+const EYE_BREAK_INTERVAL_MS = 20 * 60 * 1000; // the 20-20-20 rule
+const WATER_INTERVAL_MS = 45 * 60 * 1000;
+
+const lastReminderShownAt = {};
+
+function showReminderCard({ icon, title, text }, durationMs = REMINDER_DURATION_MS) {
     const container = document.getElementById("reminderContainer");
     if (!container) return;
-
-    // Ensure container is visible to start receiving cards
     container.classList.remove("hidden");
-    container.innerHTML = ""; // Clear any existing
 
-    // Helper to schedule a reminder
-    const scheduleReminder = (data, delayMs, durationMs) => {
-        setTimeout(() => {
-            const card = document.createElement("div");
-            card.className = "bottomReminderCard";
-            card.innerHTML = `
-                <div class="icon">${data.icon}</div>
-                <div class="text">
-                    <strong>${data.title}</strong>
-                    <p>${data.text}</p>
-                </div>
-            `;
+    const card = document.createElement("div");
+    card.className = "bottomReminderCard";
 
-            // Allow manual dismiss
-            card.onclick = () => {
-                card.style.opacity = "0";
-                setTimeout(() => card.remove(), 300);
-            };
+    const iconEl = document.createElement("div");
+    iconEl.className = "icon";
+    iconEl.textContent = icon;
 
-            container.appendChild(card);
+    const textEl = document.createElement("div");
+    textEl.className = "text";
+    const titleEl = document.createElement("strong");
+    titleEl.textContent = title;
+    const bodyEl = document.createElement("p");
+    bodyEl.textContent = text;
+    textEl.append(titleEl, bodyEl);
 
-            // Auto-vanish after duration
-            setTimeout(() => {
-                if (card.parentNode) {
-                    card.style.opacity = "0";
-                    card.style.transform = "translateY(20px)"; // Slide down out
-                    setTimeout(() => card.remove(), 500);
-                }
-            }, durationMs);
+    card.append(iconEl, textEl);
 
-        }, delayMs);
+    card.onclick = () => {
+        card.style.opacity = "0";
+        setTimeout(() => card.remove(), 300);
     };
 
-    // --- TIMELINE CONFIGURATION ---
-    // User Request: Water at 30s (30000ms), last 8s.
+    container.appendChild(card);
 
-    // 1. Posture (Immediate/Early check) - Let's put this early (e.g., 10s)
-    scheduleReminder(
-        { icon: "🧘", title: "Posture", text: "Correct your sitting position." },
-        10000, // Delay: 10 seconds
-        8000   // Duration: 8 seconds
-    );
+    setTimeout(() => {
+        if (!card.parentNode) return;
+        card.style.opacity = "0";
+        card.style.transform = "translateY(20px)";
+        setTimeout(() => card.remove(), 500);
+    }, durationMs);
+}
 
-    // 2. Water (The specific request: "after browser there for 30 seconds")
-    scheduleReminder(
-        { icon: "💧", title: "Stay Hydrated", text: "Water break time!" },
-        30000, // Delay: 30 seconds
-        8000   // Duration: 8 seconds ("after that 8 seconds it should vanish")
-    );
+// Returns whether it actually showed, so callers only reset their own clock
+// when the reminder really reached the user rather than hitting the cooldown.
+function fireReminder(key, data) {
+    const now = Date.now();
+    if (now - (lastReminderShownAt[key] || 0) < REMINDER_COOLDOWN_MS) return false;
+    lastReminderShownAt[key] = now;
+    showReminderCard(data);
+    return true;
+}
 
-    // 3. Eye Care (Late check) - Let's put this after water (e.g., 50s)
-    scheduleReminder(
-        { icon: "👀", title: "Eye Care", text: "Look at something 20ft away." },
-        50000, // Delay: 50 seconds
-        8000   // Duration: 8 seconds
-    );
+function startHydrationReminder() {
+    setInterval(() => {
+        fireReminder("water", {
+            icon: "💧",
+            title: "Stay Hydrated",
+            text: "It's been a while — time for a water break."
+        });
+    }, WATER_INTERVAL_MS);
 }
 
 // No interval for Apps/News to save bandwidth, only on load or reload
@@ -1911,6 +2031,7 @@ async function startFaceScanner() {
         toggleFaceScannerBtn.textContent = "Stop Face Scanner";
         toggleFaceScannerBtn.classList.add("active");
         setMenuFaceScannerState(true);
+        resetWellnessSession();
         authStatus.innerHTML = '<span class="statusDot on"></span> Scanner active';
         faceScanStatus.innerHTML = '<span class="eyeIcon">👁</span> Analyzing facial expressions';
         faceScanStatus.style.color = "";
@@ -1960,6 +2081,7 @@ function stopFaceScanner() {
     absenceSeconds = 0;
     if (phoneWarning) phoneWarning.classList.add("hidden");
     if (absenceWarning) absenceWarning.classList.add("hidden");
+    resetWellnessSession();
 }
 
 async function processFrame() {
@@ -1984,6 +2106,8 @@ async function processFrame() {
         });
         const data = await res.json();
         if (!faceScannerActive) return;
+
+        recordWellnessSample(data.state || "No Face", data.detected && data.using_phone, data.posture);
 
         if (data.detected) {
             // Update UI with specific state
@@ -2062,6 +2186,558 @@ toggleFaceScannerBtn.onclick = () => {
 };
 
 window.addEventListener("beforeunload", stopFaceScanner);
+
+// ------------------- APP UPDATES -------------------
+// Updates are opt-in rather than silent: main.js asks before downloading
+// anything and never restarts the app on its own. If the user picks "Later"
+// we stay quiet for the rest of the day and ask again on their next calendar
+// day - hence the local (not UTC) date key.
+
+const UPDATE_SNOOZE_KEY = "aivaUpdateSnoozedFor";
+
+const updateBanner = document.getElementById("updateBanner");
+const updateBannerTitle = document.getElementById("updateBannerTitle");
+const updateBannerText = document.getElementById("updateBannerText");
+const updateBannerPrimary = document.getElementById("updateBannerPrimary");
+const updateBannerLater = document.getElementById("updateBannerLater");
+const updateProgressTrack = document.getElementById("updateProgressTrack");
+const updateProgressBar = document.getElementById("updateProgressBar");
+
+let pendingUpdateVersion = null;
+let updateStage = "idle"; // idle | available | downloading | ready
+
+function updateTodayKey() {
+    const now = new Date();
+    return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+}
+
+function isUpdateSnoozedToday(version) {
+    try {
+        const saved = JSON.parse(localStorage.getItem(UPDATE_SNOOZE_KEY) || "null");
+        return Boolean(saved) && saved.version === version && saved.date === updateTodayKey();
+    } catch (error) {
+        return false;
+    }
+}
+
+function snoozeUpdateForToday(version) {
+    try {
+        localStorage.setItem(UPDATE_SNOOZE_KEY, JSON.stringify({ version, date: updateTodayKey() }));
+    } catch (error) {
+        console.warn("Could not save the update reminder preference:", error);
+    }
+}
+
+function hideUpdateBanner() {
+    if (updateBanner) updateBanner.classList.add("hidden");
+}
+
+function showUpdateAvailable(version) {
+    if (!updateBanner) return;
+    pendingUpdateVersion = version;
+    updateStage = "available";
+    updateBannerTitle.textContent = "Update available";
+    updateBannerText.textContent = `Version ${version} is ready to download.`;
+    updateProgressTrack.classList.add("hidden");
+    updateBannerPrimary.textContent = "Download";
+    updateBannerPrimary.disabled = false;
+    updateBannerLater.classList.remove("hidden");
+    updateBanner.classList.remove("hidden");
+}
+
+function showUpdateDownloading() {
+    updateStage = "downloading";
+    updateBannerTitle.textContent = "Downloading update";
+    updateBannerText.textContent = `Version ${pendingUpdateVersion} — you can keep working.`;
+    updateProgressBar.style.width = "0%";
+    updateProgressTrack.classList.remove("hidden");
+    updateBannerPrimary.textContent = "Downloading…";
+    updateBannerPrimary.disabled = true;
+    // No "Later" mid-download: stopping isn't something main.js can honour.
+    updateBannerLater.classList.add("hidden");
+}
+
+function showUpdateReady(version) {
+    if (!updateBanner) return;
+    pendingUpdateVersion = version || pendingUpdateVersion;
+    updateStage = "ready";
+    updateBannerTitle.textContent = "Update ready";
+    updateBannerText.textContent =
+        `Version ${pendingUpdateVersion} installs when the app restarts. Your tabs reopen afterwards.`;
+    updateProgressTrack.classList.add("hidden");
+    updateBannerPrimary.textContent = "Restart now";
+    updateBannerPrimary.disabled = false;
+    updateBannerLater.classList.remove("hidden");
+    updateBanner.classList.remove("hidden");
+}
+
+function showUpdateError(message) {
+    if (!updateBanner || updateStage === "idle") return;
+    updateStage = "available";
+    updateBannerTitle.textContent = "Update failed";
+    updateBannerText.textContent = `${message || "The download did not finish."} You can try again.`;
+    updateProgressTrack.classList.add("hidden");
+    updateBannerPrimary.textContent = "Try again";
+    updateBannerPrimary.disabled = false;
+    updateBannerLater.classList.remove("hidden");
+    updateBanner.classList.remove("hidden");
+}
+
+if (updateBanner) {
+    updateBannerPrimary.onclick = () => {
+        if (updateStage === "ready") {
+            ipcRenderer.send("update-install");
+            return;
+        }
+        ipcRenderer.send("update-download");
+        showUpdateDownloading();
+    };
+
+    const dismissUpdate = () => {
+        // Once downloaded it installs on quit regardless, so dismissing is only
+        // declining the restart - nothing is lost by hiding the prompt.
+        if (updateStage !== "ready" && pendingUpdateVersion) snoozeUpdateForToday(pendingUpdateVersion);
+        hideUpdateBanner();
+    };
+    updateBannerLater.onclick = dismissUpdate;
+    document.getElementById("updateBannerClose").onclick = dismissUpdate;
+
+    ipcRenderer.on("update-available", (_event, info) => {
+        if (!info || !info.version) return;
+        if (isUpdateSnoozedToday(info.version)) return;
+        showUpdateAvailable(info.version);
+    });
+    ipcRenderer.on("update-download-progress", (_event, progress) => {
+        if (updateStage !== "downloading") return;
+        const percent = Math.max(0, Math.min(100, (progress && progress.percent) || 0));
+        updateProgressBar.style.width = `${percent}%`;
+        updateBannerText.textContent = `Version ${pendingUpdateVersion} — ${percent}% downloaded.`;
+    });
+    ipcRenderer.on("update-downloaded", (_event, info) => showUpdateReady(info && info.version));
+    ipcRenderer.on("update-error", (_event, info) => showUpdateError(info && info.message));
+}
+
+// ------------------- WELLNESS-AWARE AGENT -------------------
+// The face scanner already reads the user's state once a second, but that read
+// used to only paint a status line and then vanish. This is what makes Aiva
+// different from every other agentic browser: the agent keeps a short memory of
+// how the person is actually doing and lets it change its behaviour - it
+// answers with their current strain in mind, interrupts its own long tool runs
+// instead of grinding through all 14 steps while someone is visibly fatigued,
+// and offers the breathing/neck/meditation apps that already ship in here.
+
+const WELLNESS_WINDOW_MS = 15 * 60 * 1000;
+const WELLNESS_SAMPLE_MS = 1000; // processFrame polls once a second
+const WELLNESS_STRAIN_STATES = new Set(["Drowsy", "Yawning", "Stressed", "Headache"]);
+const WELLNESS_ABSENT_STATES = new Set(["No Face", "Error"]);
+const WELLNESS_SNOOZE_MS = 20 * 60 * 1000;
+const WELLNESS_LONG_SESSION_MINUTES = 45;
+// Stepping away from the desk for this long is itself a break, so the
+// "minutes since last break" clock should restart rather than keep climbing.
+const WELLNESS_AWAY_IS_BREAK_MS = 2 * 60 * 1000;
+
+let wellnessSamples = [];
+let wellnessSessionStart = null;
+let wellnessLastBreakAt = null;
+let wellnessAwayStreak = 0;
+let wellnessSnoozedUntil = 0;
+
+// --- Posture ---
+// The camera reports raw head geometry, not a verdict. Those numbers are
+// meaningless in absolute terms: a tall person with a low webcam reads
+// completely differently from a short one with a high webcam. So the start of
+// every session is spent learning that individual's neutral, and a slouch is
+// only ever measured as drift away from their own baseline.
+const POSTURE_CALIBRATION_SAMPLES = 20;
+const POSTURE_NOSE_DROP = 0.055;  // head sunk this far down the frame
+const POSTURE_LEAN_RATIO = 1.16;  // face this much larger = leaned toward screen
+const POSTURE_TILT_DEGREES = 11;  // eye line rolled this far off neutral
+const POSTURE_SUSTAINED_MS = 45 * 1000;
+
+let postureBaseline = null;
+let postureCalibrationSamples = [];
+let postureBadStreakMs = 0;
+let postureIssue = null;
+let eyeBreakClockMs = 0;
+
+const BREAK_ACTIVITIES = {
+    breathing: { label: "Breathing exercise", page: "breathing.html", blurb: "a couple of minutes of guided breathing" },
+    neck: { label: "Neck & posture stretch", page: "neck.html", blurb: "a short guided neck routine" },
+    meditation: { label: "Meditation", page: "meditation.html", blurb: "a calm reset" }
+};
+
+function resetWellnessSession() {
+    wellnessSamples = [];
+    wellnessSessionStart = null;
+    wellnessLastBreakAt = null;
+    wellnessAwayStreak = 0;
+    postureBaseline = null;
+    postureCalibrationSamples = [];
+    postureBadStreakMs = 0;
+    postureIssue = null;
+    eyeBreakClockMs = 0;
+    hideWellnessNudge();
+}
+
+// Median rather than mean: a couple of frames caught mid-stretch shouldn't
+// bake a bad reference posture into the whole session.
+function calibratePosture(posture) {
+    postureCalibrationSamples.push(posture);
+    if (postureCalibrationSamples.length < POSTURE_CALIBRATION_SAMPLES) return;
+
+    const median = (key) => {
+        const values = postureCalibrationSamples.map((p) => p[key]).sort((a, b) => a - b);
+        return values[Math.floor(values.length / 2)];
+    };
+    postureBaseline = {
+        noseY: median("nose_y"),
+        faceScale: median("face_scale"),
+        tilt: median("tilt")
+    };
+    postureCalibrationSamples = [];
+}
+
+function assessPosture(posture) {
+    if (!postureBaseline) return null;
+    if (posture.nose_y - postureBaseline.noseY > POSTURE_NOSE_DROP) return "slouching";
+    if (postureBaseline.faceScale > 0
+        && posture.face_scale / postureBaseline.faceScale > POSTURE_LEAN_RATIO) return "leaning in";
+    if (Math.abs(posture.tilt - postureBaseline.tilt) > POSTURE_TILT_DEGREES) return "head tilted";
+    return null;
+}
+
+function maybeFirePostureReminder() {
+    if (!postureIssue || postureBadStreakMs < POSTURE_SUSTAINED_MS) return;
+    const text = {
+        "slouching": "You've sunk down over the last minute — sit back up.",
+        "leaning in": "You've drifted closer to the screen. Ease back.",
+        "head tilted": "Your head's been tilted to one side. Level it out."
+    }[postureIssue];
+    // Deliberately does not reset the streak: fireReminder's cooldown already
+    // prevents re-nagging, and zeroing it here would under-report to the agent
+    // how long the user has actually been sitting badly.
+    fireReminder("posture", { icon: "🧘", title: "Posture", text });
+}
+
+// Real 20-20-20: counts only time the camera actually saw them at the desk,
+// and a genuine break away resets it. A blind 20-minute timer would fire
+// while the user was in the kitchen.
+function maybeFireEyeReminder() {
+    if (eyeBreakClockMs < EYE_BREAK_INTERVAL_MS) return;
+    const fired = fireReminder("eye", {
+        icon: "👀",
+        title: "Eye Care",
+        text: "20 minutes at the screen — look 20 feet away for 20 seconds."
+    });
+    if (fired) eyeBreakClockMs = 0;
+}
+
+function recordWellnessSample(state, usingPhone, posture) {
+    const now = Date.now();
+    if (wellnessSessionStart === null) wellnessSessionStart = now;
+
+    const away = WELLNESS_ABSENT_STATES.has(state);
+    if (away) {
+        wellnessAwayStreak += WELLNESS_SAMPLE_MS;
+        if (wellnessAwayStreak >= WELLNESS_AWAY_IS_BREAK_MS) {
+            wellnessLastBreakAt = now;
+            // Away from the desk rests the eyes, and they may well sit back
+            // down differently - so the posture reference is no longer valid.
+            eyeBreakClockMs = 0;
+            postureBaseline = null;
+            postureCalibrationSamples = [];
+        }
+    } else {
+        wellnessAwayStreak = 0;
+        eyeBreakClockMs += WELLNESS_SAMPLE_MS;
+    }
+
+    postureIssue = null;
+    if (posture && !away) {
+        if (postureBaseline) postureIssue = assessPosture(posture);
+        else calibratePosture(posture);
+    }
+    postureBadStreakMs = postureIssue ? postureBadStreakMs + WELLNESS_SAMPLE_MS : 0;
+
+    wellnessSamples.push({
+        t: now,
+        state,
+        strain: WELLNESS_STRAIN_STATES.has(state),
+        away,
+        phone: Boolean(usingPhone),
+        posture: postureIssue
+    });
+
+    const cutoff = now - WELLNESS_WINDOW_MS;
+    while (wellnessSamples.length && wellnessSamples[0].t < cutoff) wellnessSamples.shift();
+
+    maybeFirePostureReminder();
+    maybeFireEyeReminder();
+    maybeNudgeForWellness();
+}
+
+function markBreakTaken() {
+    wellnessLastBreakAt = Date.now();
+    wellnessSamples = [];
+    wellnessSnoozedUntil = Date.now() + WELLNESS_SNOOZE_MS;
+    hideWellnessNudge();
+}
+
+function samplesToMinutes(count) {
+    return Math.round(((count * WELLNESS_SAMPLE_MS) / 60000) * 10) / 10;
+}
+
+// Deliberately conservative. A few stray drowsy frames must never interrupt
+// someone mid-task, so "high" needs either a sustained unbroken streak or half
+// of a genuinely long observation window.
+function gradeWellness({ observedMinutes, strainRatio, strainStreakMinutes, minutesSinceBreak }) {
+    if (observedMinutes < 2) return "ok";
+    if (strainStreakMinutes >= 3 || (observedMinutes >= 5 && strainRatio >= 0.5)) return "high";
+    if (strainStreakMinutes >= 1.5 || strainRatio >= 0.3 || minutesSinceBreak >= WELLNESS_LONG_SESSION_MINUTES) {
+        return "elevated";
+    }
+    return "ok";
+}
+
+function getWellnessSnapshot() {
+    if (!faceScannerActive || !wellnessSamples.length || wellnessSessionStart === null) {
+        return { active: false, level: "unknown" };
+    }
+
+    const now = Date.now();
+    const present = wellnessSamples.filter((sample) => !sample.away);
+    const strained = present.filter((sample) => sample.strain);
+    // Rounded once, then used for both grading and reporting - otherwise the
+    // level could disagree with the percentage shown alongside it.
+    const strainRatio = present.length
+        ? Math.round((strained.length / present.length) * 100) / 100
+        : 0;
+
+    let streak = 0;
+    for (let i = wellnessSamples.length - 1; i >= 0; i--) {
+        if (!wellnessSamples[i].strain) break;
+        streak++;
+    }
+
+    const counts = {};
+    for (const sample of strained) counts[sample.state] = (counts[sample.state] || 0) + 1;
+    const dominantSignal = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || null;
+
+    const observedMinutes = samplesToMinutes(present.length);
+    const strainStreakMinutes = samplesToMinutes(streak);
+    const screenMinutes = Math.round((now - wellnessSessionStart) / 60000);
+    const minutesSinceBreak = Math.round((now - (wellnessLastBreakAt || wellnessSessionStart)) / 60000);
+
+    return {
+        active: true,
+        observedMinutes,
+        screenMinutes,
+        minutesSinceBreak,
+        strainRatio,
+        strainStreakMinutes,
+        dominantSignal,
+        phoneMinutes: samplesToMinutes(wellnessSamples.filter((sample) => sample.phone).length),
+        posture: postureIssue,
+        postureMinutes: Math.round((postureBadStreakMs / 60000) * 10) / 10,
+        level: gradeWellness({ observedMinutes, strainRatio, strainStreakMinutes, minutesSinceBreak })
+    };
+}
+
+function describeWellnessForModel(snapshot) {
+    if (!snapshot.active) return null;
+    const parts = [
+        `strain level: ${snapshot.level}`,
+        `${snapshot.screenMinutes} min at the screen this session`,
+        `${snapshot.minutesSinceBreak} min since the last break`,
+        `${Math.round(snapshot.strainRatio * 100)}% of the last ${snapshot.observedMinutes} observed min showed strain`
+    ];
+    if (snapshot.strainStreakMinutes >= 1) {
+        parts.push(`${snapshot.strainStreakMinutes} min of unbroken strain right now`);
+    }
+    if (snapshot.dominantSignal) parts.push(`most common signal: ${snapshot.dominantSignal}`);
+    if (snapshot.phoneMinutes >= 1) parts.push(`${snapshot.phoneMinutes} min of phone use`);
+    if (snapshot.posture) {
+        parts.push(`posture: ${snapshot.posture} for ${snapshot.postureMinutes} min`);
+    }
+    return parts.join("; ");
+}
+
+function summariseStrainForUser(snapshot) {
+    const signal = {
+        Drowsy: "you're looking drowsy",
+        Yawning: "you've been yawning",
+        Stressed: "you're looking tense",
+        Headache: "you're showing signs of eye or head strain"
+    }[snapshot.dominantSignal] || "you're showing signs of strain";
+
+    if (snapshot.strainStreakMinutes >= 1) {
+        return `${signal} — for about ${snapshot.strainStreakMinutes} min straight now`;
+    }
+    return `${signal}, and it's been ${snapshot.minutesSinceBreak} min since your last break`;
+}
+
+// --- Break offers in chat ---
+
+function addBreakCard(activityKey, reason) {
+    const activity = BREAK_ACTIVITIES[activityKey] || BREAK_ACTIVITIES.breathing;
+
+    const card = document.createElement("div");
+    card.className = "wellnessCard";
+
+    const text = document.createElement("div");
+    text.className = "wellnessCardText";
+    text.textContent = reason || `${activity.label} — ${activity.blurb}.`;
+
+    const actions = document.createElement("div");
+    actions.className = "wellnessCardActions";
+
+    const startBtn = document.createElement("button");
+    startBtn.type = "button";
+    startBtn.className = "wellnessCardPrimary";
+    startBtn.textContent = `Start ${activity.label.toLowerCase()}`;
+    startBtn.onclick = () => {
+        markBreakTaken();
+        // neck.html runs its own separate MediaPipe camera. Windows webcams
+        // are exclusive-access, so navigating there while the Face Scanner
+        // still holds the device races the driver's teardown and can throw
+        // "NotReadableError: Could not start video source" on the very next
+        // getUserMedia call. Stop first and give the driver a moment to
+        // actually let go before asking for it again.
+        if (activityKey === "neck" && faceScannerActive) {
+            stopFaceScanner();
+            setTimeout(() => { window.location.href = activity.page; }, 350);
+        } else {
+            window.location.href = activity.page;
+        }
+    };
+
+    const laterBtn = document.createElement("button");
+    laterBtn.type = "button";
+    laterBtn.textContent = "Not now";
+    laterBtn.onclick = () => {
+        wellnessSnoozedUntil = Date.now() + WELLNESS_SNOOZE_MS;
+        actions.remove();
+        const dismissed = document.createElement("div");
+        dismissed.className = "wellnessCardDismissed";
+        dismissed.textContent = "Okay — I'll leave it for a while.";
+        card.appendChild(dismissed);
+    };
+
+    actions.append(startBtn, laterBtn);
+    card.append(text, actions);
+    chatMessages.appendChild(card);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// --- Mid-run checkpoint ---
+// The point of difference: a long agent run voluntarily stops to check in
+// rather than running the full step budget while the person is worn out.
+
+const WELLNESS_CHECKPOINT_AFTER_STEPS = 5;
+let pendingCheckpointResolve = null;
+
+function resolveCheckpoint(choice) {
+    if (!pendingCheckpointResolve) return;
+    const resolve = pendingCheckpointResolve;
+    pendingCheckpointResolve = null;
+    resolve(choice);
+}
+
+function awaitAgentCheckpoint(snapshot, step) {
+    return new Promise((resolve) => {
+        pendingCheckpointResolve = resolve;
+
+        const card = document.createElement("div");
+        card.className = "wellnessCard wellnessCheckpoint";
+
+        const text = document.createElement("div");
+        text.className = "wellnessCardText";
+        text.textContent =
+            `I'm ${step} steps into this and ${summariseStrainForUser(snapshot)}. ` +
+            `I can keep going, or park this and pick it back up after a break.`;
+
+        const actions = document.createElement("div");
+        actions.className = "wellnessCardActions";
+
+        const continueBtn = document.createElement("button");
+        continueBtn.type = "button";
+        continueBtn.textContent = "Keep going";
+        continueBtn.onclick = () => {
+            actions.remove();
+            wellnessSnoozedUntil = Date.now() + WELLNESS_SNOOZE_MS;
+            resolveCheckpoint("continue");
+        };
+
+        const pauseBtn = document.createElement("button");
+        pauseBtn.type = "button";
+        pauseBtn.className = "wellnessCardPrimary";
+        pauseBtn.textContent = "Pause & take a break";
+        pauseBtn.onclick = () => {
+            actions.remove();
+            resolveCheckpoint("pause");
+        };
+
+        actions.append(continueBtn, pauseBtn);
+        card.append(text, actions);
+        chatMessages.appendChild(card);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+}
+
+// --- Proactive nudge, outside any chat turn ---
+
+const wellnessNudge = document.getElementById("wellnessNudge");
+const wellnessNudgeText = document.getElementById("wellnessNudgeText");
+
+function hideWellnessNudge() {
+    if (wellnessNudge) wellnessNudge.classList.add("hidden");
+}
+
+function showWellnessNudge(snapshot) {
+    if (!wellnessNudge || !wellnessNudgeText) return;
+    const summary = summariseStrainForUser(snapshot);
+    const screenTime = snapshot.screenMinutes >= 1
+        ? ` You've been at the screen for ${snapshot.screenMinutes} min.`
+        : "";
+    wellnessNudgeText.textContent = `${summary.charAt(0).toUpperCase()}${summary.slice(1)}.${screenTime}`;
+    wellnessNudge.classList.remove("hidden");
+}
+
+// Never interrupts an agent run in flight - the run has its own checkpoint for
+// that, and two competing prompts would be noise. Also stays out of the way
+// while the chat panel is open: the assistant is already right there, and the
+// nudge sits under the panel anyway.
+function maybeNudgeForWellness() {
+    if (!wellnessNudge || activeChatController) return;
+    if (!aiChatPanel.classList.contains("hidden")) return;
+    if (!wellnessNudge.classList.contains("hidden")) return;
+    if (Date.now() < wellnessSnoozedUntil) return;
+
+    const snapshot = getWellnessSnapshot();
+    if (snapshot.level !== "high") return;
+    showWellnessNudge(snapshot);
+}
+
+if (wellnessNudge) {
+    document.getElementById("wellnessNudgeClose").onclick = () => {
+        wellnessSnoozedUntil = Date.now() + WELLNESS_SNOOZE_MS;
+        hideWellnessNudge();
+    };
+    document.getElementById("wellnessNudgeSnooze").onclick = () => {
+        wellnessSnoozedUntil = Date.now() + WELLNESS_SNOOZE_MS;
+        hideWellnessNudge();
+    };
+    document.getElementById("wellnessNudgeBreak").onclick = () => {
+        const snapshot = getWellnessSnapshot();
+        hideWellnessNudge();
+        if (aiChatPanel.classList.contains("hidden")) toggleChatPanel();
+        addMessage(
+            `Noticed ${summariseStrainForUser(snapshot)}. Here's a quick reset — your work stays exactly where it is.`,
+            false
+        );
+        addBreakCard(snapshot.dominantSignal === "Stressed" ? "meditation" : "neck");
+    };
+}
 
 // ------------------- AI CHATBOT FUNCTIONALITY -------------------
 const aiChatPanel = document.getElementById("aiChatPanel");
@@ -2160,10 +2836,13 @@ function describeToolCall(toolCall) {
         go_forward: "Going forward",
         reload_page: "Reloading the current page",
         find_elements: "Looking at what's on the page",
-        list_tabs: "Checking open tabs"
+        list_tabs: "Checking open tabs",
+        get_wellness_status: "Checking how you're doing"
     };
     const args = toolCall.arguments || {};
     switch (toolCall.name) {
+        case "suggest_break":
+            return `Offering a ${(BREAK_ACTIVITIES[args.activity] || BREAK_ACTIVITIES.breathing).label.toLowerCase()}`;
         case "navigate":
             return `Opening ${args.target || "the requested page"}`;
         case "open_tab":
@@ -2195,6 +2874,12 @@ async function attachCurrentPageContext(requestBody) {
     requestBody.page_context = pageContext;
     requestBody.page_url = webview.getURL();
     return true;
+}
+
+function attachWellnessContext(requestBody) {
+    delete requestBody.wellness_context;
+    const description = describeWellnessForModel(getWellnessSnapshot());
+    if (description) requestBody.wellness_context = description;
 }
 
 async function executeBrowserTool(name, args = {}) {
@@ -2236,6 +2921,26 @@ async function executeBrowserTool(name, args = {}) {
                 const loadResult = waitForWebviewLoad();
                 webview.reload();
                 return await loadResult;
+            }
+            case "get_wellness_status": {
+                const snapshot = getWellnessSnapshot();
+                if (!snapshot.active) {
+                    return {
+                        success: true,
+                        monitoring: false,
+                        note: "The face scanner is off, so there is no wellness reading. Do not guess how the user feels; ask them, or suggest turning the scanner on."
+                    };
+                }
+                return { success: true, monitoring: true, ...snapshot };
+            }
+            case "suggest_break": {
+                const activity = BREAK_ACTIVITIES[args.activity] ? args.activity : "breathing";
+                addBreakCard(activity, args.reason);
+                return {
+                    success: true,
+                    offered: activity,
+                    note: "A break card was shown with a start button. The user chooses - do not navigate them there yourself."
+                };
             }
             case "find_elements":
                 return await findPageElements(args.keyword);
@@ -2316,11 +3021,35 @@ async function sendMessage() {
     agentRunCancelled = false;
     setAgentRunning(true);
 
+    let checkpointOffered = false;
+
     try {
         usingPageContext = await attachCurrentPageContext(requestBody);
+        attachWellnessContext(requestBody);
 
         for (let step = 0; step < MAX_AGENT_STEPS; step++) {
             if (agentRunCancelled) throw new DOMException("Task stopped", "AbortError");
+
+            // Check in once, partway through a long run, rather than silently
+            // burning the whole step budget while the user is visibly worn out.
+            if (!checkpointOffered && step >= WELLNESS_CHECKPOINT_AFTER_STEPS) {
+                const snapshot = getWellnessSnapshot();
+                if (snapshot.level === "high") {
+                    checkpointOffered = true;
+                    setAgentStatus("Paused — checking in with you");
+                    const choice = await awaitAgentCheckpoint(snapshot, step);
+                    if (agentRunCancelled) throw new DOMException("Task stopped", "AbortError");
+                    if (choice === "pause") {
+                        addMessage(
+                            "Parked here. Nothing is lost — tell me to continue whenever you're back.",
+                            false,
+                            usingPageContext
+                        );
+                        addBreakCard(snapshot.dominantSignal === "Stressed" ? "meditation" : "neck");
+                        return;
+                    }
+                }
+            }
 
             setAgentStatus(step === 0 ? "Aiva is thinking…" : `Aiva is planning step ${step + 1}…`);
             const response = await fetch(`${BACKEND_URL}/chat`, {
@@ -2361,6 +3090,7 @@ async function sendMessage() {
             }
 
             usingPageContext = (await attachCurrentPageContext(requestBody)) || usingPageContext;
+            attachWellnessContext(requestBody);
         }
 
         const actionsSoFar = requestBody.tool_history.map((exchange) => describeToolCall(exchange)).join(", ");
@@ -2375,6 +3105,7 @@ async function sendMessage() {
             addMessage(`I couldn't complete that task: ${error.message}`, false, usingPageContext);
         }
     } finally {
+        resolveCheckpoint("pause");
         activeChatController = null;
         setAgentStatus("");
         setAgentRunning(false);
@@ -2385,6 +3116,9 @@ stopAgentBtn.onclick = () => {
     if (!activeChatController) return;
     agentRunCancelled = true;
     setAgentStatus("Stopping…");
+    // A run paused at a wellness checkpoint isn't waiting on a fetch, so
+    // aborting the controller alone would leave it hanging on the prompt.
+    resolveCheckpoint("pause");
     activeChatController.abort();
     try {
         webview.stop();
@@ -2505,7 +3239,7 @@ document.addEventListener("keydown", (event) => {
 initializeSidebar();
 renderShortcuts();
 initOnboarding();
-showStartupReminders();
+startHydrationReminder();
 fetchData();
 setInterval(fetchData, 5000); // Keep checking backend status every 5 seconds
 setInterval(checkVolumeStatus, 5000); // Check volume every 5 seconds for maximum responsiveness

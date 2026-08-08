@@ -6,7 +6,27 @@ const { autoUpdater } = require("electron-updater");
 
 let pythonProcess = null;
 let cursorPollInterval = null;
+let updateCheckInterval = null;
 let backendStartupWarningShown = false;
+let mainWindow = null;
+
+// Without this, a double-click on the desktop icon, an auto-launch entry plus
+// a manual start, or a crashed-but-still-running previous window all leave
+// two+ copies of this app alive at once. Each one runs its own Face Scanner,
+// and Windows webcams are exclusive-access: whichever instance grabs the
+// camera second gets "NotReadableError: Could not start video source." This
+// is the most likely cause of camera failures that aren't reproducible from
+// a single, deliberately-launched copy of the app.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+    app.quit();
+} else {
+    app.on("second-instance", () => {
+        if (!mainWindow) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+    });
+}
 
 // In a packaged build, __dirname points inside app.asar - the backend can't
 // run its server.py or read its model files from in there, so it ships as
@@ -18,7 +38,7 @@ function getBackendDir() {
         : path.join(__dirname, "backend");
 }
 
-function warnBackendMissing(win) {
+function warnBackendMissing(win, detail) {
     if (backendStartupWarningShown) return;
     backendStartupWarningShown = true;
     dialog.showMessageBox(win, {
@@ -26,10 +46,21 @@ function warnBackendMissing(win) {
         title: "Python backend not found",
         message: "AIVA Agentic Browser needs Python 3.11 with the packages in requirements.txt " +
             "for the AI assistant, face scanner, and posture tracking to work. Browsing still " +
-            "works without it - install Python and restart the app to enable those features.",
+            "works without it - install Python and restart the app to enable those features." +
+            (detail ? `\n\nLast error: ${detail}` : ""),
         buttons: ["OK"]
     });
 }
+
+// A grace period, not a one-shot check: `python` on PATH can point at a venv
+// that starts fine but then dies a moment later on a missing import (e.g. a
+// stray venv without mediapipe installed). The old code treated the OS
+// successfully starting *any* process as final success and never tried the
+// next candidate in that case - so on a machine where `python` resolves to a
+// broken environment, the one interpreter that would have actually worked
+// (`py`) was never attempted. Only a clean exit after the grace window, or
+// staying up past it, counts as "this interpreter is fine."
+const PYTHON_STARTUP_GRACE_MS = 4000;
 
 // Beta note: this still shells out to a system Python interpreter rather
 // than a bundled/frozen one, so those features require the user's own
@@ -41,41 +72,58 @@ function startPythonServer(win) {
     tryLaunchPython(["python", "py"], scriptPath, win);
 }
 
-function tryLaunchPython(candidates, scriptPath, win) {
+function tryLaunchPython(candidates, scriptPath, win, lastError) {
     if (!candidates.length) {
         console.error("Python Error: no working Python interpreter found (tried: python, py).");
-        warnBackendMissing(win);
+        warnBackendMissing(win, lastError);
         return;
     }
     const [command, ...rest] = candidates;
     const child = spawn(command, [scriptPath]);
-    let launched = false;
+    const startedAt = Date.now();
+    let settledPastGrace = false;
     let fallbackTried = false;
-    const fallbackToNext = () => {
+    let lastStderr = "";
+
+    const fallbackToNext = (detail) => {
         if (fallbackTried) return;
         fallbackTried = true;
-        tryLaunchPython(rest, scriptPath, win);
+        tryLaunchPython(rest, scriptPath, win, detail || lastStderr || undefined);
     };
 
     child.on("spawn", () => {
-        launched = true;
         pythonProcess = child;
+        setTimeout(() => { settledPastGrace = true; }, PYTHON_STARTUP_GRACE_MS);
     });
     child.on("error", (err) => {
-        if (err.code === "ENOENT") fallbackToNext();
+        if (err.code === "ENOENT") fallbackToNext(`"${command}" is not on PATH.`);
         else console.error(`Python Error: ${err.message}`);
     });
     child.stdout.on("data", (data) => console.log(`Python: ${data}`));
-    child.stderr.on("data", (data) => console.error(`Python Error: ${data}`));
+    child.stderr.on("data", (data) => {
+        const text = data.toString();
+        lastStderr = text.trim().split("\n").pop() || lastStderr;
+        console.error(`Python Error: ${text}`);
+    });
     child.on("exit", (code) => {
-        if (!launched && code !== 0) fallbackToNext();
+        if (code === 0) return; // deliberate shutdown, not a startup failure
+        if (!settledPastGrace) {
+            fallbackToNext(lastStderr || `"${command}" exited with code ${code}.`);
+        } else {
+            console.error(`Python process ("${command}") exited unexpectedly after startup, code ${code}.`);
+        }
     });
 }
 
-// Checked once per launch (not aggressively polled) against the GitHub
-// Releases feed electron-builder writes into every build's latest.yml.
-// Downloads happen silently in the background; the update installs
-// automatically the next time the user quits the app.
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+// Checked against the GitHub Releases feed electron-builder writes into every
+// build's latest.yml: once at startup, then daily for sessions left running.
+//
+// The user is asked before anything is downloaded (autoDownload = false), so
+// nothing large moves over their connection unprompted and the restart is
+// always their choice. autoInstallOnAppQuit stays on as the safety net: if
+// they download and then just close the app, it still lands.
 //
 // Do NOT set autoUpdater.channel here. It is not "which .yml feed to read" -
 // it is the *prerelease channel name* (alpha/beta/...), matched against the
@@ -84,15 +132,54 @@ function tryLaunchPython(candidates, scriptPath, win) {
 // "No published versions on GitHub". Left unset, electron-updater derives the
 // channel from the running version: a 0.1.0-beta.2 build looks for newer beta
 // *and* stable releases, and a stable build only takes stable ones.
-function initAutoUpdate() {
+function initAutoUpdate(win) {
     if (!app.isPackaged) return; // dev runs aren't a real release to check against
+
+    const send = (channel, payload) => {
+        if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+        win.webContents.send(channel, payload);
+    };
+
     try {
-        autoUpdater.autoDownload = true;
+        autoUpdater.autoDownload = false;
         autoUpdater.autoInstallOnAppQuit = true;
-        autoUpdater.on("error", (err) => console.error("AutoUpdater error:", err == null ? err : err.message));
-        autoUpdater.on("update-available", (info) => console.log("Update available:", info.version));
-        autoUpdater.on("update-downloaded", (info) => console.log("Update downloaded, installs on quit:", info.version));
-        autoUpdater.checkForUpdatesAndNotify().catch((err) => console.error("AutoUpdater check failed:", err.message));
+
+        autoUpdater.on("error", (err) => {
+            const message = err == null ? "Unknown updater error" : err.message;
+            console.error("AutoUpdater error:", message);
+            send("update-error", { message });
+        });
+        autoUpdater.on("update-available", (info) => {
+            console.log("Update available:", info.version);
+            send("update-available", { version: info.version, releaseDate: info.releaseDate || null });
+        });
+        autoUpdater.on("download-progress", (progress) => {
+            send("update-download-progress", { percent: Math.round(progress.percent || 0) });
+        });
+        autoUpdater.on("update-downloaded", (info) => {
+            console.log("Update downloaded:", info.version);
+            send("update-downloaded", { version: info.version });
+        });
+
+        ipcMain.on("update-download", () => {
+            autoUpdater.downloadUpdate().catch((err) => {
+                console.error("Update download failed:", err.message);
+                send("update-error", { message: err.message });
+            });
+        });
+        // Let the IPC call return before the app tears itself down, otherwise
+        // quitAndInstall can race the renderer still finishing this tick.
+        ipcMain.on("update-install", () => {
+            setImmediate(() => autoUpdater.quitAndInstall());
+        });
+
+        const check = () => autoUpdater.checkForUpdates().catch((err) => {
+            console.error("AutoUpdater check failed:", err.message);
+        });
+
+        // The renderer owns the prompt, so don't check until it can receive it.
+        win.webContents.once("did-finish-load", check);
+        updateCheckInterval = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
     } catch (err) {
         console.error("AutoUpdater setup failed:", err.message);
     }
@@ -112,10 +199,11 @@ function createWindow() {
             webviewTag: true // Enabled for internal browsing
         },
     });
+    mainWindow = win;
 
     win.loadFile("index.html");
     startPythonServer(win);
-    initAutoUpdate();
+    initAutoUpdate(win);
 
     // Custom top bar replaces the native title bar, so the renderer needs
     // IPC hooks for the window controls it now draws itself, and needs to
@@ -150,6 +238,10 @@ function createWindow() {
             clearInterval(cursorPollInterval);
             cursorPollInterval = null;
         }
+        if (updateCheckInterval) {
+            clearInterval(updateCheckInterval);
+            updateCheckInterval = null;
+        }
     });
 
     // Screenshot Capture Listener
@@ -174,7 +266,9 @@ function createWindow() {
     });
 }
 
-app.whenReady().then(createWindow);
+if (gotSingleInstanceLock) {
+    app.whenReady().then(createWindow);
+}
 
 app.on("window-all-closed", () => {
     if (pythonProcess) pythonProcess.kill();
