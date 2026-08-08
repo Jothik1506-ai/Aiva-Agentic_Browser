@@ -797,7 +797,7 @@ function getDragAfterElement(container, y) {
     }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
-function setupDragAndDrop(container, isPinnedTarget) {
+function setupDragAndDrop(container, targetType) {
     container.ondragover = (e) => {
         e.preventDefault();
         const draggable = document.querySelector(".dragging");
@@ -834,7 +834,8 @@ function setupDragAndDrop(container, isPinnedTarget) {
         const draggedTab = getSidebarTab(tabId);
         if (!draggedTab) return;
 
-        draggedTab.pinned = isPinnedTarget;
+        draggedTab.pinned = targetType === 'pinned';
+        draggedTab.isPersonal = targetType === 'personal';
         const afterElement = getDragAfterElement(container, e.clientY);
         
         if (afterElement) {
@@ -847,6 +848,13 @@ function setupDragAndDrop(container, isPinnedTarget) {
         const otherTabs = sidebarTabs.filter(t => t.workspace !== activeSidebarWorkspace);
         
         const newWorkspaceOrder = [];
+        const personalList = document.getElementById("sidebarPersonalList");
+        if (personalList) {
+            personalList.querySelectorAll(".sidebarTabItem").forEach(el => {
+                const t = workspaceTabs.find(t => t.id === el.dataset.tabId);
+                if(t) newWorkspaceOrder.push(t);
+            });
+        }
         sidebarPinnedList.querySelectorAll(".sidebarTabItem").forEach(el => {
             const t = workspaceTabs.find(t => t.id === el.dataset.tabId);
             if(t) newWorkspaceOrder.push(t);
@@ -959,17 +967,18 @@ function renderSidebarTabs({ force = false } = {}) {
     lastTabRenderSignature = signature;
 
     renderSidebarTabList(sidebarPinnedList, workspaceTabs.filter((tab) => tab.pinned), "Pin a tab to keep it here");
-    renderSidebarTabList(sidebarTabsList, workspaceTabs.filter((tab) => !tab.pinned), "No open tabs");
+    const personalList = document.getElementById("sidebarPersonalList");
+    if (personalList) renderSidebarTabList(personalList, workspaceTabs.filter((tab) => tab.isPersonal), "No personal tabs");
+    renderSidebarTabList(sidebarTabsList, workspaceTabs.filter((tab) => !tab.pinned && !tab.isPersonal), "No open tabs");
 
-    setupDragAndDrop(sidebarPinnedList, true);
-    setupDragAndDrop(sidebarTabsList, false);
+    setupDragAndDrop(sidebarPinnedList, 'pinned');
+    setupDragAndDrop(sidebarTabsList, 'tabs');
+    if (personalList) setupDragAndDrop(personalList, 'personal');
 
     activeWorkspaceName.textContent = SIDEBAR_WORKSPACES[activeSidebarWorkspace];
     document.querySelectorAll(".workspaceButton").forEach((button) => {
         button.classList.toggle("active", button.dataset.workspace === activeSidebarWorkspace);
     });
-    const activeTab = getSidebarTab(activeSidebarTabId);
-    document.getElementById("pinCurrentTabBtn").textContent = activeTab?.pinned ? "−" : "＋";
 }
 
 function persistSidebarState() {
@@ -1037,11 +1046,14 @@ function initializeSidebar() {
     document.querySelectorAll(".workspaceButton").forEach((button) => {
         button.onclick = () => switchSidebarWorkspace(button.dataset.workspace);
     });
-    document.getElementById("newTabBtn").onclick = () => {
-        createSidebarTab("about:blank", { activate: true });
-        urlBar.focus();
-    };
-    document.getElementById("pinCurrentTabBtn").onclick = togglePinForActiveTab;
+    
+    const newTabBtn = document.getElementById("newTabBtn");
+    if (newTabBtn) {
+        newTabBtn.onclick = () => {
+            createSidebarTab("about:blank", { activate: true });
+            urlBar.focus();
+        };
+    }
 
     let hoverTimeout;
     const toggleSidebarPinned = () => {

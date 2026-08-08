@@ -1,29 +1,37 @@
 /* AIVA-AGENTIC-BROWSER THEME */
 :root {
-  --bg-color: #1f2a24;
-  /* primary background */
-  --card-bg: rgba(255, 255, 255, 0.05);
-  /* panels, cards, inputs */
-  --text-color: #e3e8e5;
-  /* primary text */
-  --muted-text: #b7c1bc;
-  /* secondary text */
-  --accent-color: #7fc8a9;
-  /* links, highlights, active states */
-  --border-color: rgba(255, 255, 255, 0.08);
+  /* Default: Dark Mode */
+  --bg-color: #006DB2;
+  --card-bg: rgba(255, 255, 255, 0.1);
+  --text-color: #ffffff;
+  --muted-text: rgba(255, 255, 255, 0.7);
+  --accent-color: #ffffff;
+  --border-color: rgba(255, 255, 255, 0.15);
+  
   --sidebar-width: 276px;
   --sidebar-expanded-width: 276px;
   --top-bar-height: 44px;
-  /* Overridden per workspace by applyWorkspaceTheme() (Arc-style Spaces) */
-  --space-tint-top: rgba(45, 58, 51, 0.97);
-  --space-tint-bottom: rgba(26, 34, 30, 0.98);
+  
+  --space-tint-top: rgba(0, 109, 178, 0.97);
+  --space-tint-bottom: rgba(0, 80, 130, 0.98);
 
-  /* Shared motion system - one set of curves so every surface animates alike */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 0.14s;
   --dur-base: 0.22s;
   --dur-slow: 0.36s;
+}
+
+[data-theme="light"] {
+  --bg-color: #7BB4E3;
+  --card-bg: rgba(255, 255, 255, 0.5);
+  --text-color: #111827;
+  --muted-text: rgba(17, 24, 39, 0.7);
+  --accent-color: #006DB2;
+  --border-color: rgba(0, 0, 0, 0.1);
+  
+  --space-tint-top: rgba(123, 180, 227, 0.97);
+  --space-tint-bottom: rgba(100, 150, 200, 0.98);
 }
 
 /* Respect the OS "reduce motion" setting: keep state changes instant rather
@@ -117,9 +125,7 @@ html {
   height: 100%;
   z-index: 2;
   pointer-events: none;
-  background:
-    radial-gradient(115% 85% at 50% 46%, rgba(0, 0, 0, 0.18) 0%, rgba(0, 0, 0, 0.52) 62%, rgba(0, 0, 0, 0.72) 100%),
-    linear-gradient(180deg, rgba(12, 17, 14, 0.72) 0%, rgba(12, 17, 14, 0.2) 26%, rgba(12, 17, 14, 0.3) 68%, rgba(12, 17, 14, 0.78) 100%);
+  background: var(--overlay-bg, linear-gradient(180deg, rgba(12, 17, 14, 0.72) 0%, rgba(12, 17, 14, 0.2) 26%, rgba(12, 17, 14, 0.3) 68%, rgba(12, 17, 14, 0.78) 100%));
 }
 
 /* CUSTOM TOP BAR (replaces the native OS title bar) */
@@ -135,8 +141,8 @@ html {
   gap: 10px;
   padding: 0 10px;
   box-sizing: border-box;
-  background: linear-gradient(180deg, rgba(45, 58, 51, 0.98), rgba(31, 42, 36, 0.98));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, var(--space-tint-top), var(--space-tint-bottom));
+  border-bottom: 1px solid var(--border-color);
   -webkit-app-region: drag;
   user-select: none;
 }
